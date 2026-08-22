@@ -1,5 +1,7 @@
 package com.example.qas.services;
 
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 import com.example.qas.dto.request.PatientUpdateRequest;
 import com.example.qas.dto.response.PatientProfileResponse;
 import com.example.qas.mappers.PatientMapper;
@@ -9,33 +11,35 @@ import com.example.qas.repositories.PatientRepository;
 import com.example.qas.repositories.UserRepository;
 import com.example.qas.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PatientService {
+
+    private static final long MAX_FILE_SIZE = 10L * 1024 * 1024;
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+    );
 
     private final PatientRepository patientRepository;
     private final UserRepository userRepository;
     private final PatientMapper patientMapper;
+    private final Cloudinary cloudinary;
 
-    private static final String UPLOAD_DIR = "uploads/medical-history/";
-
-    public record FileResource(Resource resource, String originalFilename) {}
+    public record FileResource(String url, String originalFilename) {}
 
     public PatientProfileResponse getCurrentPatientProfile() {
         Patient patient = getCurrentPatient();
@@ -53,60 +57,68 @@ public class PatientService {
     @Transactional
     public Map<String, String> uploadMedicalHistory(MultipartFile file) {
         Patient patient = getCurrentPatient();
+        validateMedicalHistoryFile(file);
+        String publicId = null;
+        String resourceType = null;
 
         try {
-            Path uploadPath = Paths.get(UPLOAD_DIR);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
+            Map<String, Object> uploadParams = ObjectUtils.asMap(
+                    "type", "private",
+                    "resource_type", "auto",
+                    "folder", "qas/medical-history/" + patient.getId(),
+                    "use_filename", false,
+                    "unique_filename", true
+            );
+            Map<String, Object> uploadResult = cloudinary.uploader().upload(file.getBytes(), uploadParams);
+
+            publicId = Objects.toString(uploadResult.get("public_id"), null);
+            resourceType = Objects.toString(uploadResult.get("resource_type"), "raw");
+            String format = Objects.toString(uploadResult.get("format"), "");
+            if (publicId == null) {
+                throw new IOException("Cloudinary did not return a public ID");
             }
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not create upload directory");
+
+            Map<String, Object> medicalHistory = patient.getMedicalHistory();
+            if (medicalHistory == null) {
+                medicalHistory = new HashMap<>();
+            } else {
+                medicalHistory = new HashMap<>(medicalHistory);
+            }
+
+            Map<String, Object> fileEntry = new HashMap<>();
+            fileEntry.put("publicId", publicId);
+            fileEntry.put("resourceType", resourceType);
+            fileEntry.put("format", format);
+            fileEntry.put("originalFileName", safeFilename(file.getOriginalFilename()));
+            fileEntry.put("fileType", file.getContentType());
+            fileEntry.put("fileSize", file.getSize());
+            fileEntry.put("uploadedAt", OffsetDateTime.now().toString());
+
+            Object filesObj = medicalHistory.get("files");
+            if (filesObj instanceof List) {
+                List<Object> filesList = new ArrayList<>((List<?>) filesObj);
+                filesList.add(fileEntry);
+                medicalHistory.put("files", filesList);
+            } else {
+                List<Object> filesList = new ArrayList<>();
+                filesList.add(fileEntry);
+                medicalHistory.put("files", filesList);
+            }
+
+            patient.setMedicalHistory(medicalHistory);
+            patientRepository.save(patient);
+
+            return Map.of("message", "File uploaded successfully", "publicId", publicId);
+
+        } catch (Exception e) {
+            log.error("Medical history upload failed for patient {}", patient.getId(), e);
+            deleteUploadedAssetQuietly(publicId, resourceType);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload medical history file", e);
         }
-
-        String originalFilename = file.getOriginalFilename();
-        String fileExtension = "";
-        if (originalFilename != null && originalFilename.contains(".")) {
-            fileExtension = originalFilename.substring(originalFilename.lastIndexOf("."));
-        }
-        String fileId = UUID.randomUUID().toString();
-        String storedFileName = fileId + fileExtension;
-        Path filePath = Paths.get(UPLOAD_DIR, storedFileName);
-
-        try {
-            Files.write(filePath, file.getBytes());
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to save file");
-        }
-
-        Map<String, Object> medicalHistory = patient.getMedicalHistory();
-        if (medicalHistory == null) {
-            medicalHistory = new HashMap<>();
-        }
-
-        Map<String, Object> fileEntry = new HashMap<>();
-        fileEntry.put("fileId", fileId);
-        fileEntry.put("fileName", originalFilename);
-        fileEntry.put("storedFileName", storedFileName);
-        fileEntry.put("fileType", file.getContentType());
-        fileEntry.put("fileSize", file.getSize());
-        fileEntry.put("uploadedAt", LocalDateTime.now().toString());
-
-        Object filesObj = medicalHistory.get("files");
-        if (filesObj instanceof List) {
-            ((List<Object>) filesObj).add(fileEntry);
-        } else {
-            List<Object> filesList = new ArrayList<>();
-            filesList.add(fileEntry);
-            medicalHistory.put("files", filesList);
-        }
-
-        patient.setMedicalHistory(medicalHistory);
-        patientRepository.save(patient);
-
-        return Map.of("message", "File uploaded successfully", "fileId", fileId);
     }
 
-    public FileResource getMedicalHistoryFileResource(String fileId) {
+    public FileResource getMedicalHistoryFileResource(String publicId) {
+        // Verify the file belongs to the current patient
         Patient patient = getCurrentPatient();
         Map<String, Object> medicalHistory = patient.getMedicalHistory();
         if (medicalHistory == null || !medicalHistory.containsKey("files")) {
@@ -120,34 +132,58 @@ public class PatientService {
 
         List<Map<String, Object>> files = (List<Map<String, Object>>) filesObj;
         Map<String, Object> fileMetadata = files.stream()
-                .filter(f -> fileId.equals(f.get("fileId")))
+                .filter(f -> publicId.equals(f.get("publicId")))
                 .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found for this patient"));
 
-        String storedFileName = (String) fileMetadata.get("storedFileName");
-        if (storedFileName == null) {
-            // fallback: look for file by prefix (old style)
-            Path uploadPath = Paths.get(UPLOAD_DIR);
-            File directory = uploadPath.toFile();
-            File[] matchingFiles = directory.listFiles((dir, name) -> name.startsWith(fileId));
-            if (matchingFiles != null && matchingFiles.length > 0) {
-                storedFileName = matchingFiles[0].getName();
-            } else {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found on disk");
-            }
+        String signedUrl;
+        try {
+            String format = Objects.toString(fileMetadata.get("format"), "");
+            String resourceType = Objects.toString(fileMetadata.get("resourceType"), "raw");
+            signedUrl = cloudinary.privateDownload(publicId, format, ObjectUtils.asMap(
+                    "resource_type", resourceType,
+                    "expires_at", System.currentTimeMillis() / 1000 + 300,
+                    "attachment", true
+            ));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate download URL");
         }
 
-        Path filePath = Paths.get(UPLOAD_DIR, storedFileName);
+        String originalFilename = (String) fileMetadata.get("originalFileName");
+        return new FileResource(signedUrl, originalFilename);
+    }
+
+    private void validateMedicalHistoryFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File must not be empty");
+        }
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "File exceeds the 10 MB limit");
+        }
+        if (!ALLOWED_CONTENT_TYPES.contains(file.getContentType())) {
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Only PDF, JPEG, and PNG files are allowed");
+        }
+    }
+
+    private String safeFilename(String originalFilename) {
+        if (originalFilename == null || originalFilename.isBlank()) {
+            return "medical-history-file";
+        }
+        return originalFilename.replace('\\', '/').substring(originalFilename.replace('\\', '/').lastIndexOf('/') + 1);
+    }
+
+    private void deleteUploadedAssetQuietly(String publicId, String resourceType) {
+        if (publicId == null) {
+            return;
+        }
         try {
-            Resource resource = new UrlResource(filePath.toUri());
-            if (resource.exists() && resource.isReadable()) {
-                String originalFilename = (String) fileMetadata.get("fileName");
-                return new FileResource(resource, originalFilename);
-            } else {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not readable");
-            }
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error reading file");
+            cloudinary.uploader().destroy(publicId, ObjectUtils.asMap(
+                    "resource_type", resourceType == null ? "raw" : resourceType,
+                    "type", "private",
+                    "invalidate", true
+            ));
+        } catch (Exception ignored) {
+            // Preserve the original upload or persistence error.
         }
     }
 

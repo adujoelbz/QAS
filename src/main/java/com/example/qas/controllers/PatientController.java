@@ -18,7 +18,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/patients")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('PATIENT')")
+@PreAuthorize("hasAuthority('ROLE_PATIENT')")
 public class PatientController {
 
     private final PatientService patientService;
@@ -41,15 +41,12 @@ public class PatientController {
         return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED).body(response);
     }
 
-    @GetMapping("/me/medical-history/{fileId}")
-    public ResponseEntity<Resource> downloadMedicalHistoryFile(@PathVariable String fileId) {
-        PatientService.FileResource fileResource = patientService.getMedicalHistoryFileResource(fileId);
-        Resource resource = fileResource.resource();
-        String originalFilename = fileResource.originalFilename();
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + originalFilename + "\"")
-                .body(resource);
+    @GetMapping("/me/medical-history/download")
+    public ResponseEntity<Map<String, String>> downloadMedicalHistoryFile(@RequestParam String publicId) {
+        PatientService.FileResource fileResource = patientService.getMedicalHistoryFileResource(publicId);
+        return ResponseEntity.ok(Map.of(
+                "downloadUrl", fileResource.url(),
+                "originalFilename", fileResource.originalFilename()
+        ));
     }
 }
