@@ -2,6 +2,7 @@ package com.example.qas.repositories;
 
 import com.example.qas.models.Department;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -12,4 +13,7 @@ public interface DepartmentRepository extends JpaRepository<Department, Long> {
     List<Department> findBySpecialty(String specialty);
     List<Department> findByHospitalIdAndSpecialty(Long hospitalId, String specialty);
     List<Department> findByNameContainingIgnoreCase(String name);
+    @Query("SELECT DISTINCT d.specialty FROM Department d ORDER BY d.specialty")
+    List<String> findDistinctSpecialties();
+
 }
