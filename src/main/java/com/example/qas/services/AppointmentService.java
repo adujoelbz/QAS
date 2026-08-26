@@ -1,5 +1,8 @@
 package com.example.qas.services;
 
+import com.example.qas.dto.ai.NoShowPredictionResponse;
+import com.example.qas.dto.ai.SlotRecommendationResponse;
+import com.example.qas.dto.ai.WaitTimePredictionResponse;
 import com.example.qas.dto.request.AppointmentRequest;
 import com.example.qas.dto.request.AppointmentRescheduleRequest;
 import com.example.qas.dto.response.AppointmentResponse;
@@ -8,9 +11,11 @@ import com.example.qas.dto.response.SlotRecommendation;
 import com.example.qas.mappers.AppointmentMapper;
 import com.example.qas.models.*;
 import com.example.qas.models.enums.AppointmentStatus;
+import com.example.qas.models.enums.PredictionType;
 import com.example.qas.repositories.*;
 import com.example.qas.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -20,10 +25,14 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AppointmentService {
@@ -33,8 +42,11 @@ public class AppointmentService {
     private final DoctorRepository doctorRepository;
     private final DepartmentRepository departmentRepository;
     private final UserRepository userRepository;
+    private final AiPredictionLogRepository aiPredictionLogRepository;
     private final AppointmentMapper appointmentMapper;
     private final QueueService queueService;
+    private final AIService aiService;
+    private final NotificationService notificationService;
 
     // === Patient operations ===
 
@@ -73,40 +85,46 @@ public class AppointmentService {
             queueService.handleEmergencyAppointment(appointment.getId());
         }
 
-        // Trigger AI recommendation (async if possible) - we'll implement later
-        // For now, we just return the appointment
+        // Run AI no-show prediction
+        try {
+            NoShowPredictionResponse prediction = aiService.predictNoShow(appointment);
+            if (prediction != null) {
+                // Log the prediction for future analysis
+                logPrediction(appointment, PredictionType.NO_SHOW,
+                        Map.of("probability", prediction.getProbability()),
+                        Map.of("riskLevel", prediction.getRiskLevel(), "recommendation", prediction.getRecommendation()));
+
+                // If high risk, trigger additional confirmation
+                if ("HIGH".equals(prediction.getRiskLevel())) {
+                    notificationService.sendConfirmationRequest(appointment.getId());
+                }
+            }
+        } catch (Exception e) {
+            log.error("AI no-show prediction failed for appointment {}: {}", appointment.getId(), e.getMessage());
+        }
 
         return appointmentMapper.toResponse(appointment);
     }
 
     public List<SlotRecommendation> getRecommendedSlots(Long departmentId, LocalDate preferredDate, LocalTime preferredTime) {
-        // Basic implementation – we'll enhance with AI later
-        List<SlotRecommendation> recommendations = new ArrayList<>();
+        // Use AI service for recommendations
+        List<SlotRecommendationResponse.RecommendedSlot> aiSlots =
+                aiService.recommendSlots(departmentId, preferredDate, preferredTime);
 
-        // Generate time slots from 08:00 to 17:00
-        LocalTime start = LocalTime.of(8, 0);
-        LocalTime end = LocalTime.of(17, 0);
-
-        // Get department's average consultation duration
-        Department department = departmentRepository.findById(departmentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found"));
-        int slotDuration = department.getEstimatedConsultationDurationMinutes();
-
-        // Create slots
-        LocalTime current = start;
-        while (current.isBefore(end)) {
-            SlotRecommendation slot = SlotRecommendation.builder()
-                    .date(preferredDate)
-                    .time(current)
-                    .estimatedWaitMinutes(15 + (int) (Math.random() * 30)) // Placeholder
-                    .confidence(0.7 + Math.random() * 0.3) // Placeholder
-                    .reason("Available slot based on department schedule")
-                    .build();
-            recommendations.add(slot);
-            current = current.plusMinutes(slotDuration);
+        if (aiSlots != null && !aiSlots.isEmpty()) {
+            return aiSlots.stream()
+                    .map(slot -> SlotRecommendation.builder()
+                            .date(slot.getDate())
+                            .time(slot.getTime())
+                            .estimatedWaitMinutes(slot.getEstimatedWaitMinutes())
+                            .confidence(slot.getConfidence())
+                            .reason(slot.getReason())
+                            .build())
+                    .collect(Collectors.toList());
         }
 
-        return recommendations;
+        // Fallback to deterministic slot generation
+        return generateFallbackSlots(departmentId, preferredDate);
     }
 
     public AppointmentResponse getAppointmentById(Long appointmentId) {
@@ -175,6 +193,10 @@ public class AppointmentService {
             }
         }
 
+        // Store old date/time for notification
+        LocalDate oldDate = appointment.getRequestedDate();
+        LocalTime oldTime = appointment.getRequestedTime();
+
         // Update appointment
         appointment.setRequestedDate(request.getNewDate());
         appointment.setRequestedTime(request.getNewTime());
@@ -184,6 +206,13 @@ public class AppointmentService {
 
         // Recalculate queue positions for this department
         queueService.recalcQueuePositionsForDepartment(appointment.getDepartment().getId());
+
+        // Send reschedule notification
+        try {
+            notificationService.sendAppointmentRescheduleNotification(appointment.getId(), oldDate, oldTime);
+        } catch (Exception e) {
+            log.error("Failed to send reschedule notification: {}", e.getMessage());
+        }
 
         return appointmentMapper.toResponse(appointment);
     }
@@ -209,7 +238,7 @@ public class AppointmentService {
         Long departmentId = appointment.getDepartment().getId();
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
-        appointment.setCancelledAt(java.time.OffsetDateTime.now());
+        appointment.setCancelledAt(OffsetDateTime.now());
         appointmentRepository.save(appointment);
 
         // Recalculate queue positions for this department
@@ -217,11 +246,31 @@ public class AppointmentService {
 
         // Attempt to allocate a standby slot
         queueService.allocateStandbySlot(departmentId);
+
+        // Send cancellation notification
+        try {
+            notificationService.sendAppointmentCancellationNotification(appointmentId);
+        } catch (Exception e) {
+            log.error("Failed to send cancellation notification: {}", e.getMessage());
+        }
     }
 
     public QueueStatusResponse getQueueStatus(Long appointmentId) {
-        // Delegate to QueueService for consistent queue management
-        return queueService.getQueueStatusForAppointment(appointmentId);
+        // Get queue status from QueueService
+        QueueStatusResponse response = queueService.getQueueStatusForAppointment(appointmentId);
+
+        // Enhance with AI wait-time prediction
+        try {
+            WaitTimePredictionResponse aiWait = aiService.predictWaitTime(appointmentId);
+            if (aiWait != null) {
+                response.setEstimatedWaitMinutes(aiWait.getPredictedWaitMinutes());
+                // Optionally store confidence in a separate field if needed
+            }
+        } catch (Exception e) {
+            log.error("AI wait-time prediction failed for appointment {}: {}", appointmentId, e.getMessage());
+        }
+
+        return response;
     }
 
     // === Admin operations ===
@@ -281,8 +330,22 @@ public class AppointmentService {
         // Recalculate queue positions for this department
         queueService.recalcQueuePositionsForDepartment(appointment.getDepartment().getId());
 
-        // Send notification (will be implemented in NotificationService)
-        // notificationService.sendAppointmentApprovalNotification(appointment);
+        // Send approval notification
+        try {
+            notificationService.sendAppointmentApprovalNotification(appointmentId);
+        } catch (Exception e) {
+            log.error("Failed to send approval notification: {}", e.getMessage());
+        }
+
+        // Run AI no-show prediction for approved appointment
+        try {
+            NoShowPredictionResponse prediction = aiService.predictNoShow(appointment);
+            if (prediction != null && "HIGH".equals(prediction.getRiskLevel())) {
+                notificationService.sendConfirmationRequest(appointmentId);
+            }
+        } catch (Exception e) {
+            log.error("AI no-show prediction failed for appointment {}: {}", appointmentId, e.getMessage());
+        }
 
         return appointmentMapper.toResponse(appointment);
     }
@@ -376,5 +439,44 @@ public class AppointmentService {
         User currentUser = SecurityUtils.getCurrentUser(userRepository);
         return doctorRepository.findByUserId(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Doctor profile not found"));
+    }
+
+    private List<SlotRecommendation> generateFallbackSlots(Long departmentId, LocalDate date) {
+        List<SlotRecommendation> recommendations = new ArrayList<>();
+        Department department = departmentRepository.findById(departmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found"));
+
+        int slotDuration = department.getEstimatedConsultationDurationMinutes();
+        LocalTime start = LocalTime.of(8, 0);
+        LocalTime end = LocalTime.of(17, 0);
+
+        while (start.isBefore(end)) {
+            recommendations.add(SlotRecommendation.builder()
+                    .date(date)
+                    .time(start)
+                    .estimatedWaitMinutes(15 + (int) (Math.random() * 30))
+                    .confidence(0.7 + Math.random() * 0.3)
+                    .reason("Available slot based on department schedule")
+                    .build());
+            start = start.plusMinutes(slotDuration);
+        }
+
+        return recommendations;
+    }
+
+    private void logPrediction(Appointment appointment, PredictionType type,
+                               Map<String, Object> features, Map<String, Object> result) {
+        try {
+            AiPredictionLog log = new AiPredictionLog();
+            log.setAppointment(appointment);
+            log.setPredictionType(type);
+            log.setInputFeatures(features);
+            log.setPredictionResult(result);
+            log.setModelVersion("v1.0");
+            log.setCreatedAt(OffsetDateTime.now());
+            aiPredictionLogRepository.save(log);
+        } catch (Exception e) {
+            log.error("Failed to log AI prediction: {}", e.getMessage());
+        }
     }
 }

@@ -18,18 +18,20 @@ import com.example.qas.repositories.HospitalRepository;
 import com.example.qas.repositories.UserRepository;
 import com.example.qas.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DoctorService {
@@ -40,6 +42,8 @@ public class DoctorService {
     private final AppointmentRepository appointmentRepository;
     private final AppointmentMapper appointmentMapper;
     private final DoctorMapper doctorMapper;
+    private final QueueService queueService;            // Added
+    private final NotificationService notificationService; // Added
 
     // === Doctor's own profile ===
 
@@ -68,23 +72,17 @@ public class DoctorService {
 
     public List<DoctorScheduleResponse> getDoctorSchedule(LocalDate dateFrom, LocalDate dateTo) {
         Doctor doctor = getCurrentDoctor();
-        // Get appointments for the date range
         List<Appointment> appointments = appointmentRepository
                 .findByDoctorIdAndRequestedDateBetween(doctor.getId(), dateFrom, dateTo);
-        // Group by date
         Map<LocalDate, List<Appointment>> appointmentsByDate = appointments.stream()
                 .collect(Collectors.groupingBy(Appointment::getRequestedDate));
 
-        // Generate available slots for each day (based on availability)
-        // This is a simplified version – we'll just return appointments and leave available slots empty for now.
-        // In real implementation, you'd compute available time slots from availability and existing appointments.
         List<DoctorScheduleResponse> schedule = new ArrayList<>();
         LocalDate current = dateFrom;
         while (!current.isAfter(dateTo)) {
             List<AppointmentResponse> appResponses = appointmentsByDate.getOrDefault(current, List.of()).stream()
                     .map(appointmentMapper::toResponse)
                     .collect(Collectors.toList());
-            // For available slots, we can compute if needed. We'll return empty list.
             schedule.add(DoctorScheduleResponse.builder()
                     .date(current)
                     .appointments(appResponses)
@@ -131,7 +129,6 @@ public class DoctorService {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
 
-        // Verify that this appointment belongs to this doctor
         if (!appointment.getDoctor().getId().equals(doctor.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this appointment");
         }
@@ -143,18 +140,31 @@ public class DoctorService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status value");
         }
 
-        // Validate allowed transitions: only from CONFIRMED or APPROVED to COMPLETED or NO_SHOW
-        // We'll allow any change for simplicity, but you can add rules.
-        appointment.setStatus(newStatus);
+        // Validate allowed transitions
         if (newStatus == AppointmentStatus.COMPLETED || newStatus == AppointmentStatus.NO_SHOW) {
             if (actualWaitTime != null) {
                 appointment.setActualWaitTimeMinutes(actualWaitTime);
             }
             if (newStatus == AppointmentStatus.COMPLETED) {
-                appointment.setCompletedAt(java.time.OffsetDateTime.now());
+                appointment.setCompletedAt(OffsetDateTime.now());
             }
         }
+
+        appointment.setStatus(newStatus);
         appointment = appointmentRepository.save(appointment);
+
+        // Recalculate queue positions for this department
+        queueService.recalcQueuePositionsForDepartment(appointment.getDepartment().getId());
+
+        // Send notification based on status change
+        if (newStatus == AppointmentStatus.NO_SHOW) {
+            notificationService.sendNoShowAlert(appointmentId);
+            // Attempt to allocate a standby slot
+            queueService.allocateStandbySlot(appointment.getDepartment().getId());
+        } else if (newStatus == AppointmentStatus.COMPLETED) {
+            log.info("Appointment {} marked as COMPLETED", appointmentId);
+        }
+
         return appointmentMapper.toResponse(appointment);
     }
 
@@ -163,7 +173,6 @@ public class DoctorService {
     @Transactional
     public DoctorProfileResponse approveDoctorRegistration(Long doctorUserId, Long hospitalId, boolean approved) {
         if (!approved) {
-            // If rejected, maybe disable the user account
             User user = userRepository.findById(doctorUserId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
             user.setEnabled(false);
@@ -174,7 +183,6 @@ public class DoctorService {
         User user = userRepository.findById(doctorUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
 
-        // Ensure user is a DOCTOR
         if (!user.getRole().name().equals("DOCTOR")) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User is not a doctor");
         }
@@ -182,15 +190,12 @@ public class DoctorService {
         Hospital hospital = hospitalRepository.findById(hospitalId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Hospital not found"));
 
-        // Get or create Doctor profile (assuming it was created during registration)
         Doctor doctor = doctorRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Doctor profile not found"));
 
-        // Assign hospital
         doctor.setHospital(hospital);
         doctorRepository.save(doctor);
 
-        // Enable the user
         user.setEnabled(true);
         userRepository.save(user);
 

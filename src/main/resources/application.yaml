@@ -22,6 +22,7 @@ spring:
           starttls:
             enable: true
 
+
 jwt:
   secret: change-this-development-secret-key-to-at-least-32-characters
   expiration: 86400000
@@ -37,3 +38,9 @@ app:
   notification:
       email-from: noreply@queueless.com   # Hardcoded for development
       base-url: ${APP_BASE_URL:http://localhost:8080}
+
+ai:
+  service:
+    url: ${AI_SERVICE_URL:http://localhost:5000}
+    timeout: 5000  # milliseconds
+    enabled: ${AI_ENABLED:true}

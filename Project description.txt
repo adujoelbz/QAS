@@ -1,0 +1,366 @@
+================================================================================
+            QUEUELESS AI APPOINTMENT SYSTEM – PROJECT DESCRIPTION
+================================================================================
+
+1. INTRODUCTION
+================================================================================
+The Queueless AI Appointment System is a secure, multi‑user digital platform
+designed to eliminate physical queues and streamline appointment scheduling
+in healthcare settings. It enables patients to register, search for hospitals
+and departments, book appointments, receive automated notifications, and
+monitor their real‑time queue position and estimated waiting time.
+Administrators can manage users, appointments, hospitals, and generate
+system‑wide reports, while doctors can manage their availability and respond
+to patient queries.
+
+The system goes beyond traditional appointment management by integrating
+Artificial Intelligence to:
+  • Recommend optimal appointment slots based on availability and historical
+    patterns.
+  • Predict the likelihood of no‑shows and trigger targeted confirmation
+    requests.
+  • Refine waiting‑time estimates using current queue data and historical
+    consultation durations.
+
+These intelligent features automate repetitive decisions and empower both
+patients and hospital staff with better scheduling insights.
+
+
+2. PROBLEM STATEMENT
+================================================================================
+Manual appointment booking and walk‑in processes often result in:
+  • Long waiting times and patient dissatisfaction.
+  • Scheduling conflicts and double bookings.
+  • Poor communication between patients and providers.
+  • Inefficient use of doctors’ time and resources.
+  • Limited visibility into queue status and wait times.
+  • Difficulty anticipating no‑shows and reallocating unused slots.
+
+Basic digital appointment systems merely store bookings without analysing
+historical patterns or providing predictive capabilities. There is a clear
+need for a system that combines robust appointment management, real‑time
+queue optimisation, and AI‑driven automation to enhance the patient journey
+and hospital efficiency.
+
+
+3. AIM
+================================================================================
+To develop and deploy a secure, multi‑user AI‑enabled appointment management
+and queue optimisation system that reduces physical waiting, improves
+communication between patients and healthcare providers, automates key
+scheduling tasks, and provides realistic, real‑time estimates of patient
+waiting times.
+
+
+4. OBJECTIVES
+================================================================================
+• Enable patient registration and secure login.
+• Enable doctor and administrator registration and login with role‑based
+  access.
+• Allow patients to search for hospitals and departments by specialty and
+  location.
+• Allow patients to book appointments by selecting a hospital department,
+  preferred date, time, and reason for visit.
+• Use AI to recommend suitable appointment slots based on available
+  capacity, queue conditions, and historical scheduling patterns.
+• Allow administrators to review, approve, or reject appointment requests.
+• Allow doctors to define their availability and consultation schedules.
+• Send automated email notifications and reminders to patients and doctors.
+• Use an AI‑based model to estimate the likelihood of appointment no‑shows.
+• Automatically support standby‑slot allocation when appointments are
+  cancelled or identified as likely to become unavailable.
+• Provide AI‑assisted waiting‑time prediction using queue information and
+  historical appointment data.
+• Support patient‑doctor communication through a question‑and‑answer module.
+• Maintain a full appointment history for patients and doctors.
+• Model and display each patient’s live queue position and estimated
+  waiting time.
+• Provide an administrator dashboard with system‑wide oversight, AI‑related
+  statistics, and reporting.
+• Securely store medical history files (uploaded by patients) using a cloud
+  storage service (Cloudinary).
+
+
+5. KEY FEATURES
+================================================================================
+5.1 Patient Dashboard
+  • Search for hospitals and departments by specialty.
+  • Book appointments with AI‑recommended slots and wait‑time estimates.
+  • View live queue position, number of patients ahead, and estimated
+    wait time.
+  • Reschedule or cancel appointments.
+  • Join a standby queue for earlier available slots.
+  • Ask questions and view doctor responses.
+  • Upload and manage medical history files.
+  • View full appointment history.
+  • Edit profile and change password.
+
+5.2 Doctor Dashboard
+  • Manage professional profile and hospital affiliation.
+  • Set available working days and consultation hours.
+  • View administrator‑approved daily and weekly schedules.
+  • View and respond to patient questions.
+  • Mark consultations as started, completed, or no‑show.
+  • View uploaded patient medical history before consultations.
+
+5.3 Admin Dashboard
+  • Manage patient and doctor accounts (approve/reject registrations).
+  • Manage hospital and department records.
+  • Monitor all appointments across the system.
+  • View queue performance, average waiting times, and peak booking periods.
+  • View appointment cancellation and no‑show statistics.
+  • Monitor AI prediction results and usage.
+  • Review model performance indicators (accuracy, MAE, etc.).
+  • Manage standby‑queue allocation and exceptional scheduling cases.
+  • Record administrative actions for audit purposes.
+
+5.4 AI Capabilities
+  • Appointment‑slot recommendation: analyses capacity, queue, and history
+    to suggest optimal slots.
+  • No‑show prediction: estimates probability of a missed appointment
+    using factors like previous no‑shows, lead time, time of day, etc.
+  • Waiting‑time prediction: refines estimates using queue position,
+    historical durations, doctor load, and emergency cases.
+  • All AI outputs are used as decision support; final control remains
+    with the user (patient, doctor, or admin).
+
+5.5 Notifications
+  • Email notifications for appointment approval, cancellation,
+    rescheduling, no‑show alerts, confirmation requests, and reminders.
+  • All notifications are stored in the database with delivery status
+    (sent/failed) for auditing.
+
+5.6 Queue Management
+  • Each department is modelled as a multi‑server queue.
+  • Emergency requests are prioritised using an emergency flag.
+  • Real‑time queue position and wait‑time updates.
+  • Automatic slot reallocation when appointments are cancelled or no‑show.
+  • Standby queue for patients waiting for earlier slots.
+
+5.7 Security
+  • JWT‑based authentication with role‑based access control
+    (Patient, Doctor, Admin).
+  • Passwords are BCrypt‑hashed.
+  • Medical data and personal information are encrypted in transit and at
+    rest.
+  • All admin actions are logged for audit trails.
+
+
+6. SYSTEM ARCHITECTURE
+================================================================================
+The system follows a microservices‑oriented architecture with two main
+components:
+
+  1. Spring Boot Backend (Java 17)
+     - Handles all business logic, REST APIs, security, database
+       interactions, and integration with external services.
+     - Exposes a well‑documented RESTful API.
+     - Uses Spring Data JPA for database access.
+
+  2. Python AI Microservice (Flask)
+     - Provides AI predictions (slot recommendation, no‑show prediction,
+       wait‑time prediction).
+     - Communicates with the backend via REST APIs.
+     - Uses scikit‑learn (mock models currently; ready for real training).
+
+  3. PostgreSQL Database
+     - Stores all application data.
+     - Uses Flyway for schema versioning and migrations.
+
+  4. Cloudinary
+     - Used for storing patient‑uploaded medical history files (PDFs, images).
+
+  5. Email Provider (Spring Mail)
+     - Sends all email notifications via SMTP (configurable to any provider).
+
+  6. React Frontend (Optional – can be implemented separately)
+     - Consumes the REST API and provides a modern, responsive user
+       interface.
+
+The system is stateless, scalable, and can be deployed in a containerised
+environment (Docker, Kubernetes).
+
+
+7. TECHNOLOGY STACK
+================================================================================
+• Backend:    Spring Boot 4.1.1, Spring Security, Spring Data JPA
+• AI Service: Flask (Python 3.11+), scikit‑learn, pandas, numpy
+• Database:   PostgreSQL 18 (or later)
+• Migration:  Flyway
+• Frontend:   React (planned)
+• File Storage: Cloudinary
+• Notifications: Spring Mail (SMTP)
+• Security:   JWT, BCrypt
+• Build Tool: Maven
+• Version Control: Git
+
+
+8. DATABASE SCHEMA (Main Tables)
+================================================================================
+• users          – base authentication table (role: PATIENT, DOCTOR, ADMIN)
+• patients       – extends users, stores patient‑specific data
+• doctors        – extends users, stores doctor‑specific data
+• hospitals      – hospital details
+• departments    – departments within hospitals (specialty, consultation duration)
+• appointments   – core appointment records with status, queue positions,
+                   estimated/actual wait times, etc.
+• doctor_availabilities – detailed schedule of doctors (day, start/end time)
+• notifications  – logs of all notifications sent
+• questions      – patient‑doctor Q&A
+• audit_logs     – admin action logs
+• ai_prediction_logs – records of AI predictions for monitoring
+
+Full schema is available in the migration scripts.
+
+
+9. API ENDPOINTS (Overview)
+================================================================================
+Public (no authentication):
+  • POST /api/auth/register – patient registration
+  • POST /api/auth/login    – login and JWT token issuance
+  • GET /api/public/hospitals, /api/public/departments, etc.
+
+Patient (requires ROLE_PATIENT):
+  • GET /api/patients/me – profile
+  • PUT /api/patients/me – update profile
+  • POST /api/appointments – book appointment
+  • GET /api/appointments – list appointments
+  • PUT /api/appointments/{id}/reschedule
+  • DELETE /api/appointments/{id} – cancel
+  • GET /api/appointments/{id}/queue – queue status
+  • POST /api/appointments/{id}/standby – join standby
+  • POST /api/appointments/{id}/questions – ask question
+  • POST /api/patients/me/medical-history – upload file
+  • GET /api/patients/me/medical-history/download – download file
+
+Doctor (requires ROLE_DOCTOR):
+  • GET /api/doctors/me – profile
+  • PUT /api/doctors/me/availability – update availability
+  • GET /api/doctors/me/schedule – view schedule
+  • GET /api/doctors/me/appointments – view appointments
+  • PATCH /api/doctors/appointments/{id}/status – update status
+  • POST /api/appointments/{appointmentId}/questions/{questionId}/answer
+
+Admin (requires ROLE_ADMIN):
+  • GET /api/admin/dashboard/stats – dashboard statistics
+  • GET /api/admin/appointments – filter all appointments
+  • PATCH /api/admin/appointments/{id}/approve – approve with doctor
+  • PATCH /api/admin/appointments/{id}/reject
+  • GET /api/admin/queue/departments/{id} – queue analytics
+  • POST /api/admin/queue/departments/{id}/recalc – manual recalculation
+  • GET /api/admin/ai/predictions – AI prediction logs
+  • GET /api/admin/audit-logs – audit logs
+  • Full CRUD for hospitals, departments, patients, doctors.
+
+Detailed request/response schemas are available in the API documentation.
+
+
+10. AI SERVICE INTEGRATION
+================================================================================
+The AI microservice runs on a separate port (default 5000) and provides three
+endpoints:
+
+  • POST /recommend-slots – returns a list of recommended appointment slots
+    with estimated wait time and confidence.
+  • POST /predict-no-show – returns probability of no‑show, risk level
+    (LOW/MEDIUM/HIGH), and recommendation.
+  • POST /predict-wait-time – returns a refined waiting‑time estimate in
+    minutes and a confidence score.
+
+The Spring Boot backend communicates with the AI service using WebClient.
+If the AI service is unavailable, the system falls back to deterministic
+calculations (e.g., queue position × average duration). All AI predictions
+are logged in the `ai_prediction_logs` table for performance monitoring
+and future retraining.
+
+Currently, the AI service uses mock predictions to demonstrate the
+integration. It can be replaced with actual trained machine learning models
+without changing the frontend or backend logic.
+
+
+11. NOTIFICATION FLOW
+================================================================================
+Email notifications are sent automatically at the following events:
+
+  • Appointment approved – patient receives confirmation details.
+  • Appointment cancelled – patient is informed.
+  • Appointment rescheduled – patient receives updated date/time.
+  • No‑show – patient receives an alert and is prompted to reschedule.
+  • High no‑show risk detected – patient receives a confirmation request
+    with a link to confirm.
+  • Daily reminder (scheduled task) – patients with appointments the next day
+    receive a reminder email.
+
+All notification attempts (sent/failed) are recorded in the `notifications`
+table with timestamps and error messages for auditing.
+
+
+12. SECURITY
+================================================================================
+• Authentication: JWT token with 24‑hour validity.
+• Authorization: Method‑level security using `@PreAuthorize` with roles
+  (PATIENT, DOCTOR, ADMIN).
+• Password hashing: BCrypt.
+• Data encryption: All sensitive data is transmitted over HTTPS (in
+  production).
+• Input validation: All API requests are validated using Jakarta Bean
+  Validation.
+• Cross‑Origin Resource Sharing (CORS): Configured to allow frontend
+  origins.
+• Audit logging: All admin actions are logged with the admin’s ID, action,
+  details, and IP address.
+
+
+13. DEPLOYMENT CONSIDERATIONS
+================================================================================
+• The Spring Boot application can be packaged as a JAR file and run with
+  `java -jar qas.jar`.
+• The Python AI service can be run with a WSGI server (Gunicorn/Waitress)
+  for production.
+• Environment variables are used for all secrets (JWT secret, Cloudinary
+  credentials, mail credentials, AI service URL).
+• The database connection pool is managed by HikariCP (auto‑configured).
+• Scheduled tasks (reminders) are enabled with `@EnableScheduling`.
+• Monitoring can be added via Spring Boot Actuator and Micrometer.
+
+
+14. BENEFITS
+================================================================================
+• Reduces physical queues and patient waiting times.
+• Provides transparent, real‑time queue visibility.
+• Improves appointment utilisation through AI‑driven slot recommendation
+  and no‑show prediction.
+• Enhances patient‑doctor communication through a dedicated Q&A module.
+• Empowers administrators with powerful analytics and oversight.
+• Automates repetitive tasks (reminders, confirmations) while keeping
+  clinical decisions under professional control.
+• Scalable architecture supports growth in users, hospitals, and doctors.
+• Maintains high data security and privacy standards.
+
+
+15. EXPECTED OUTCOME
+================================================================================
+A fully functional, secure, multi‑user AI‑enabled appointment system that
+significantly reduces patient waiting time, prevents scheduling conflicts,
+improves appointment utilisation, and provides all stakeholders with
+real‑time visibility into queue status. The system demonstrates practical
+AI automation through appointment‑slot recommendation, no‑show prediction,
+and waiting‑time refinement, while retaining the robust queueing model and
+administrative controls required for reliable appointment management.
+
+
+16. CONCLUSION
+================================================================================
+The Queueless AI Appointment System modernises healthcare scheduling by
+integrating a digital multi‑user platform, an explicit queueing model, and
+practical artificial intelligence. It offers patients a transparent and
+convenient experience while giving hospitals the tools to manage
+appointments and queues more efficiently. The combination of real‑time
+queue management, AI‑driven decision support, and comprehensive
+notification handling makes this solution a powerful asset for any
+healthcare facility aiming to improve patient satisfaction and
+operational efficiency.
+
+================================================================================
+                       END OF DOCUMENT
+================================================================================

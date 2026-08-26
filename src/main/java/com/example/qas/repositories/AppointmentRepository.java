@@ -96,4 +96,5 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     Double findAverageActualWaitTime(@Param("start") LocalDate start, @Param("end") LocalDate end);
     @Query("SELECT COUNT(a) FROM Appointment a WHERE a.status = 'NO_SHOW' AND a.requestedDate BETWEEN :start AND :end")
     long countNoShowsBetween(@Param("start") LocalDate start, @Param("end") LocalDate end);
+    List<Appointment> findByRequestedDateAndStatus(LocalDate date, AppointmentStatus status);
 }

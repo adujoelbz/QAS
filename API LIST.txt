@@ -1,25 +1,20 @@
 ================================================================================
-               QUEUELESS AI APPOINTMENT SYSTEM - API DOCUMENTATION
+                QUEUELESS AI APPOINTMENT SYSTEM - FULL API REFERENCE
 ================================================================================
 
-Base URL: http://localhost:8080/api
+BASE URL: http://localhost:8080/api
+AUTHENTICATION: Bearer JWT token for protected endpoints (except /auth/* and /public/*)
 
-Authentication: All endpoints except /auth/** require a Bearer JWT token in the
-               Authorization header.
+-------------------------------------------------------------------------------
+1. AUTHENTICATION (Public)
+-------------------------------------------------------------------------------
 
-               Authorization: Bearer <jwt_token>
-
---------------------------------------------------------------------------------
-1. AUTHENTICATION & REGISTRATION
---------------------------------------------------------------------------------
-
-1.1 Register a new patient
-    POST /auth/register
-
-    Request body:
+POST /auth/register
+  - Register a new patient (role = PATIENT).
+  - Request:
     {
       "email": "patient@example.com",
-      "password": "securePass123",
+      "password": "Secure123!",
       "firstName": "John",
       "lastName": "Doe",
       "phone": "+233501234567",
@@ -27,43 +22,37 @@ Authentication: All endpoints except /auth/** require a Bearer JWT token in the
       "gender": "MALE",
       "address": "123 Main St, Accra"
     }
-
-    Response (201 Created):
+  - Response (201 Created):
     {
-      "id": 1,
-      "email": "patient@example.com",
-      "role": "PATIENT",
-      "firstName": "John",
-      "lastName": "Doe",
-      "phone": "+233501234567",
-      "createdAt": "2026-08-22T12:34:56Z"
-    }
-
-1.2 Login
-    POST /auth/login
-
-    Request body:
-    {
-      "email": "patient@example.com",
-      "password": "securePass123"
-    }
-
-    Response (200 OK):
-    {
-      "token": "eyJhbGciOiJIUzI1NiIs...",
+      "token": "eyJ...",
       "role": "PATIENT",
       "userId": 1,
       "email": "patient@example.com"
     }
 
---------------------------------------------------------------------------------
-2. PATIENT ENDPOINTS (ROLE_PATIENT required)
---------------------------------------------------------------------------------
+POST /auth/login
+  - Login for all roles.
+  - Request:
+    {
+      "email": "patient@example.com",
+      "password": "Secure123!"
+    }
+  - Response (200 OK):
+    {
+      "token": "eyJ...",
+      "role": "PATIENT",
+      "userId": 1,
+      "email": "patient@example.com"
+    }
 
-2.1 Get patient profile
-    GET /patients/me
 
-    Response (200 OK):
+-------------------------------------------------------------------------------
+2. PATIENT ENDPOINTS (Role: PATIENT)
+-------------------------------------------------------------------------------
+
+GET /patients/me
+  - Get current patient's profile.
+  - Response (200 OK): PatientProfileResponse
     {
       "id": 1,
       "email": "patient@example.com",
@@ -73,60 +62,236 @@ Authentication: All endpoints except /auth/** require a Bearer JWT token in the
       "dateOfBirth": "1990-01-01",
       "gender": "MALE",
       "address": "123 Main St, Accra",
-      "medicalHistory": {
-        "allergies": ["penicillin"],
-        "chronicConditions": ["hypertension"]
-      }
+      "medicalHistory": { ... },
+      "createdAt": "2026-08-26T10:00:00Z"
     }
 
-2.2 Update patient profile
-    PUT /patients/me
-
-    Request body (all fields optional):
+PUT /patients/me
+  - Update current patient's profile (only firstName, phone, address allowed).
+  - Request:
     {
       "firstName": "Johnny",
       "phone": "+233501234568",
       "address": "456 New St, Accra"
     }
+  - Response (200 OK): updated PatientProfileResponse
 
-    Response: Updated patient object.
+POST /patients/me/medical-history
+  - Upload a medical file (PDF, JPEG, PNG) up to 10 MB.
+  - Content-Type: multipart/form-data, key = "file"
+  - Response (201 Created):
+    {
+      "message": "File uploaded successfully",
+      "publicId": "qas/medical-history/1/abcd1234"
+    }
 
-2.3 Search hospitals
-    GET /hospitals?name=Korle&page=0&size=20
+GET /patients/me/medical-history/download?publicId=...
+  - Get a signed download URL for the file (valid for 5 minutes).
+  - Request param: publicId (required)
+  - Response (200 OK):
+    {
+      "downloadUrl": "https://res.cloudinary.com/.../signed?...",
+      "originalFilename": "test.pdf"
+    }
 
-    Response (200 OK):
+
+-------------------------------------------------------------------------------
+3. DOCTOR ENDPOINTS (Role: DOCTOR)
+-------------------------------------------------------------------------------
+
+GET /doctors/me
+  - Get current doctor's profile.
+  - Response (200 OK): DoctorProfileResponse
+    {
+      "id": 2,
+      "email": "doctor@example.com",
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "specialty": "Cardiology",
+      "hospitalId": 1,
+      "hospitalName": "Korle Bu Teaching Hospital",
+      "consultationDurationMinutes": 30,
+      "availableDays": { "MONDAY": ["09:00-12:00"] }
+    }
+
+PUT /doctors/me/availability
+  - Update doctor's available days and time slots.
+  - Request:
+    {
+      "availableDays": {
+        "MONDAY": ["09:00-12:00", "14:00-17:00"],
+        "WEDNESDAY": ["09:00-12:00"]
+      }
+    }
+  - Response (200 OK): updated DoctorProfileResponse
+
+PUT /doctors/me/consultation-duration
+  - Set consultation duration.
+  - Request:
+    {
+      "consultationDurationMinutes": 45
+    }
+  - Response (200 OK): updated DoctorProfileResponse
+
+GET /doctors/me/schedule?dateFrom=2026-09-01&dateTo=2026-09-07
+  - Get schedule for a date range.
+  - Response (200 OK): List<DoctorScheduleResponse>
+    [
+      {
+        "date": "2026-09-01",
+        "appointments": [ AppointmentResponse, ... ],
+        "availableSlots": [ "09:00", "09:30", ... ]
+      }
+    ]
+
+GET /doctors/me/appointments?status=CONFIRMED&date=2026-09-01
+  - Get filtered appointments for the current doctor.
+  - Response (200 OK): List<AppointmentResponse> (same as patient's)
+
+PATCH /doctors/appointments/{appointmentId}/status?status=COMPLETED&actualWaitTime=25
+  - Update consultation status (COMPLETED or NO_SHOW) and optional actual wait time.
+  - Response (200 OK): AppointmentResponse with updated status/timestamps
+
+
+-------------------------------------------------------------------------------
+4. ADMIN ENDPOINTS (Role: ADMIN)
+-------------------------------------------------------------------------------
+
+--- Hospitals ---
+
+POST /admin/hospitals
+  - Create a hospital.
+  - Request: HospitalCreateRequest
+    {
+      "name": "Korle Bu Teaching Hospital",
+      "address": "Accra, Ghana",
+      "latitude": 5.5353,
+      "longitude": -0.2130,
+      "phone": "+233302665421",
+      "email": "info@korlebu.gh"
+    }
+  - Response (201 Created): HospitalResponse
+
+PUT /admin/hospitals/{hospitalId}
+  - Update hospital.
+  - Request: same as above (all fields optional but recommended)
+  - Response (200 OK): updated HospitalResponse
+
+DELETE /admin/hospitals/{hospitalId}
+  - Delete hospital (if no doctors/departments depend on it).
+  - Response: 204 No Content
+
+--- Departments ---
+
+POST /admin/hospitals/{hospitalId}/departments
+  - Create a department under a hospital.
+  - Request: DepartmentCreateRequest
+    {
+      "name": "Cardiology Unit",
+      "specialty": "Cardiology",
+      "estimatedConsultationDurationMinutes": 30
+    }
+  - Response (201 Created): DepartmentResponse
+
+PUT /admin/departments/{departmentId}
+  - Update department.
+  - Request: same as above
+  - Response (200 OK): updated DepartmentResponse
+
+DELETE /admin/departments/{departmentId}
+  - Delete department.
+  - Response: 204 No Content
+
+--- Appointments (Admin oversight) ---
+
+GET /admin/appointments?status=PENDING&departmentId=1&doctorId=2&dateFrom=2026-09-01&dateTo=2026-09-30&page=0&size=20
+  - List all appointments with filters (pagination).
+  - Response (200 OK): Page<AppointmentResponse>
+
+PATCH /admin/appointments/{appointmentId}/approve?doctorId={doctorId}
+  - Approve a pending appointment and assign a doctor.
+  - Response (200 OK): updated AppointmentResponse (status=APPROVED)
+
+PATCH /admin/appointments/{appointmentId}/reject
+  - Reject a pending appointment.
+  - Response (200 OK): updated AppointmentResponse (status=REJECTED)
+
+--- Dashboard & Analytics ---
+
+GET /admin/dashboard/stats
+  - Get dashboard statistics.
+  - Response (200 OK): DashboardStatsResponse
+    {
+      "totalPatients": 1200,
+      "totalDoctors": 45,
+      "totalAdmins": 3,
+      "totalAppointmentsToday": 87,
+      "totalAppointmentsThisWeek": 450,
+      "totalAppointmentsThisMonth": 1800,
+      "averageWaitTimeMinutes": 23.5,
+      "noShowRate": 0.12,
+      "aiAccuracy": { "noShowPrediction": 0.88, "waitTimePredictionMAE": 4.5 }
+    }
+
+GET /admin/queue/departments/{departmentId}
+  - Queue analytics for a department.
+  - Response (200 OK): QueueAnalyticsResponse
+    {
+      "departmentName": "Cardiology",
+      "currentQueueLength": 5,
+      "averageWaitMinutes": 28.0,
+      "peakTime": "10:00-11:00",
+      "slotUtilization": 0.75
+    }
+
+POST /admin/queue/departments/{departmentId}/recalc
+  - Manually trigger recalculation of queue positions.
+  - Response: 200 OK
+
+GET /admin/ai/predictions?type=NO_SHOW&from=2026-09-01T00:00:00Z&to=2026-09-30T23:59:59Z
+  - Get AI prediction logs with optional type and date filters.
+  - Response (200 OK): List<PredictionReport>
+    [
+      {
+        "id": 1,
+        "appointmentId": 100,
+        "predictionType": "NO_SHOW",
+        "inputFeatures": { ... },
+        "predictionResult": { "probability": 0.18, "riskLevel": "HIGH" },
+        "actualOutcome": { "status": "COMPLETED" },
+        "modelVersion": "v1.0",
+        "createdAt": "2026-09-01T10:00:00Z"
+      }
+    ]
+
+GET /admin/audit-logs?adminId=1&from=2026-09-01T00:00:00Z&to=2026-09-30T23:59:59Z&page=0&size=20
+  - Get paginated audit logs (admin actions).
+  - Response (200 OK): Page<AuditLogResponse>
     {
       "content": [
         {
           "id": 1,
-          "name": "Korle Bu Teaching Hospital",
-          "address": "Accra, Ghana",
-          "phone": "+233302665421",
-          "email": "info@korlebu.gh"
+          "adminId": 2,
+          "action": "APPROVE_APPOINTMENT",
+          "details": { "appointmentId": 100 },
+          "ipAddress": "192.168.1.1",
+          "createdAt": "2026-09-01T10:05:00Z"
         }
       ],
-      "totalElements": 1,
-      "totalPages": 1
+      "totalElements": 50,
+      "totalPages": 3
     }
 
-2.4 Search departments by specialty or hospital
-    GET /departments?specialty=Cardiology&hospitalId=1
 
-    Response (200 OK):
-    [
-      {
-        "id": 10,
-        "hospitalId": 1,
-        "name": "Cardiology Unit",
-        "specialty": "Cardiology",
-        "estimatedConsultationDurationMinutes": 30
-      }
-    ]
+-------------------------------------------------------------------------------
+5. APPOINTMENT ENDPOINTS (Patient / Admin / Doctor)
+-------------------------------------------------------------------------------
 
-2.5 Request an appointment
-    POST /appointments
+--- Patient operations ---
 
-    Request body:
+POST /appointments
+  - Patient requests a new appointment.
+  - Request: AppointmentRequest
     {
       "departmentId": 10,
       "requestedDate": "2026-09-01",
@@ -134,8 +299,7 @@ Authentication: All endpoints except /auth/** require a Bearer JWT token in the
       "reason": "Chest pain",
       "emergencyFlag": false
     }
-
-    Response (201 Created):
+  - Response (201 Created): AppointmentResponse
     {
       "id": 100,
       "patientId": 1,
@@ -148,328 +312,175 @@ Authentication: All endpoints except /auth/** require a Bearer JWT token in the
       "emergencyFlag": false,
       "queuePosition": null,
       "estimatedWaitTimeMinutes": null,
-      "createdAt": "2026-08-22T12:34:56Z"
+      "createdAt": "2026-08-26T10:00:00Z",
+      "updatedAt": "2026-08-26T10:00:00Z",
+      "confirmedAt": null,
+      "cancelledAt": null,
+      "completedAt": null
     }
 
-2.6 Get AI‑recommended slots (before booking)
-    POST /appointments/recommend
-
-    Request body:
-    {
-      "departmentId": 10,
-      "preferredDate": "2026-09-01",
-      "preferredTime": "10:00"
-    }
-
-    Response (200 OK):
-    {
-      "slots": [
-        {
-          "date": "2026-09-01",
-          "time": "10:00",
-          "estimatedWaitMinutes": 15,
-          "confidence": 0.85,
-          "reason": "Low queue, doctor available"
-        },
-        {
-          "date": "2026-09-01",
-          "time": "14:00",
-          "estimatedWaitMinutes": 40,
-          "confidence": 0.70,
-          "reason": "Peak hour"
-        }
-      ]
-    }
-
-2.7 Get patient's appointments
-    GET /appointments?status=PENDING&page=0&size=10
-
-    Response: Paginated list of appointments.
-
-2.8 Get appointment details
-    GET /appointments/{appointmentId}
-
-    Response: Full appointment object.
-
-2.9 Cancel appointment
-    DELETE /appointments/{appointmentId}
-
-    Response: 204 No Content
-
-2.10 Reschedule appointment
-     PUT /appointments/{appointmentId}/reschedule
-
-     Request body:
-     {
-       "newDate": "2026-09-02",
-       "newTime": "09:30"
-     }
-
-     Response: Updated appointment.
-
-2.11 Get live queue status
-     GET /appointments/{appointmentId}/queue
-
-     Response:
-     {
-       "appointmentId": 100,
-       "queuePosition": 3,
-       "patientsAhead": 2,
-       "estimatedWaitMinutes": 45,
-       "status": "CONFIRMED"
-     }
-
-2.12 Join standby queue for earlier slot
-     POST /appointments/{appointmentId}/standby
-
-     Response:
-     {
-       "message": "Successfully joined standby queue",
-       "standbyPosition": 5
-     }
-
-2.13 Ask a question to the doctor
-     POST /appointments/{appointmentId}/questions
-
-     Request body:
-     {
-       "question": "Should I take my medication before the appointment?"
-     }
-
-     Response: Question ID and timestamp.
-
-2.14 View doctor's response to a question
-     GET /appointments/{appointmentId}/questions/{questionId}
-
-     Response:
-     {
-       "question": "Should I take my medication before the appointment?",
-       "answer": "Yes, take it as prescribed.",
-       "answeredAt": "2026-08-22T15:00:00Z"
-     }
-
-2.15 Upload medical history file
-     POST /patients/me/medical-history
-     Content-Type: multipart/form-data
-
-     Form‑data: file (PDF, JPG, PNG, etc.)
-
-     Response:
-     {
-       "message": "File uploaded successfully",
-       "fileId": "abc-123"
-     }
-
---------------------------------------------------------------------------------
-3. DOCTOR ENDPOINTS (ROLE_DOCTOR required)
---------------------------------------------------------------------------------
-
-3.1 Get doctor profile
-    GET /doctors/me
-
-    Response: Similar to patient but with specialty, hospitalId, consultationDurationMinutes, availableDays.
-
-3.2 Update doctor availability
-    PUT /doctors/me/availability
-
-    Request body:
-    {
-      "availableDays": {
-        "MONDAY": ["09:00-12:00", "14:00-17:00"],
-        "WEDNESDAY": ["09:00-12:00"]
+POST /appointments/recommend?departmentId=10&preferredDate=2026-09-01&preferredTime=10:00
+  - Get AI‑recommended appointment slots.
+  - Response (200 OK): List<SlotRecommendation>
+    [
+      {
+        "date": "2026-09-01",
+        "time": "10:00",
+        "estimatedWaitMinutes": 15,
+        "confidence": 0.85,
+        "reason": "Low queue, doctor available"
       }
-    }
+    ]
 
-    Response: Updated doctor object.
+GET /appointments?status=PENDING&page=0&size=10
+  - Get current patient's appointments, optionally filtered by status.
+  - Response (200 OK): Page<AppointmentResponse>
 
-3.3 Get doctor's schedule
-    GET /doctors/me/schedule?dateFrom=2026-09-01&dateTo=2026-09-07
+GET /appointments/{appointmentId}
+  - Get details of a specific appointment (must be owned by patient).
+  - Response (200 OK): AppointmentResponse
 
-    Response: List of appointments and available slots.
-
-3.4 View appointments assigned to doctor
-    GET /doctors/me/appointments?status=CONFIRMED&date=2026-09-01
-
-    Response: List of appointments.
-
-3.5 Mark consultation as started/completed
-    PATCH /appointments/{appointmentId}/status
-
-    Request body:
+PUT /appointments/{appointmentId}/reschedule
+  - Reschedule an appointment.
+  - Request:
     {
-      "status": "COMPLETED",
-      "actualWaitTimeMinutes": 25
+      "newDate": "2026-09-02",
+      "newTime": "09:30"
+    }
+  - Response (200 OK): updated AppointmentResponse (status resets to PENDING)
+
+DELETE /appointments/{appointmentId}
+  - Cancel an appointment (patient).
+  - Response: 204 No Content
+
+GET /appointments/{appointmentId}/queue
+  - Get live queue status for an approved/confirmed appointment.
+  - Response (200 OK): QueueStatusResponse
+    {
+      "appointmentId": 100,
+      "queuePosition": 3,
+      "patientsAhead": 2,
+      "estimatedWaitMinutes": 45,
+      "status": "CONFIRMED"
     }
 
-    Response: Updated appointment.
+POST /appointments/{appointmentId}/standby
+  - Join standby queue for a pending appointment (place holder).
+  - Response (200 OK): { "message": "Successfully joined standby queue for appointment 100" }
 
-3.6 Respond to a patient's question
-    POST /appointments/{appointmentId}/questions/{questionId}/answer
+--- Doctor operations (already listed under Doctor endpoints) ---
 
-    Request body:
+GET /doctors/appointments?status=CONFIRMED&date=2026-09-01&doctorId=2
+  - Get appointments for a specific doctor (must match current doctor's ID).
+  - Response (200 OK): List<AppointmentResponse>
+
+--- Admin operations (already listed under Admin) ---
+
+PATCH /admin/appointments/{appointmentId}/approve?doctorId={doctorId}
+PATCH /admin/appointments/{appointmentId}/reject
+
+
+-------------------------------------------------------------------------------
+6. HOSPITAL & DEPARTMENT PUBLIC ENDPOINTS (Public)
+-------------------------------------------------------------------------------
+
+GET /public/hospitals?name=Korle&page=0&size=20
+  - Search hospitals by name.
+  - Response (200 OK): Page<HospitalResponse>
+
+GET /public/hospitals/{hospitalId}
+  - Get hospital by ID.
+  - Response (200 OK): HospitalResponse
+
+GET /public/hospitals/nearby?lat=5.6037&lng=-0.1870&radius=10
+  - Find hospitals within a radius (km) from given coordinates.
+  - Response (200 OK): Page<HospitalResponse> (simplified, returns all if no proper calculation)
+
+GET /public/departments?hospitalId=1&specialty=Cardiology
+  - Get departments filtered by hospital and/or specialty.
+  - Response (200 OK): List<DepartmentResponse>
+
+GET /public/departments/{departmentId}
+  - Get department by ID.
+  - Response (200 OK): DepartmentResponse
+
+GET /public/specialties
+  - Get all distinct specialties.
+  - Response (200 OK): List<String> (e.g., [ "Cardiology", "Pediatrics", ... ])
+
+
+-------------------------------------------------------------------------------
+7. QUESTION & ANSWER ENDPOINTS (Patient & Doctor)
+-------------------------------------------------------------------------------
+
+Patient asks a question:
+POST /appointments/{appointmentId}/questions
+  - Role: PATIENT (must own the appointment)
+  - Request:
+    {
+      "question": "Should I take my medication before the appointment?"
+    }
+  - Response (201 Created): QuestionResponse
+    {
+      "id": 1,
+      "appointmentId": 1,
+      "patientId": 1,
+      "patientName": "John Doe",
+      "doctorId": 2,
+      "doctorName": "Jane Smith",
+      "question": "Should I take my medication before the appointment?",
+      "answer": null,
+      "answeredAt": null,
+      "createdAt": "2026-08-26T10:00:00Z",
+      "updatedAt": "2026-08-26T10:00:00Z"
+    }
+
+GET /appointments/{appointmentId}/questions
+  - Get all questions for an appointment (patient or doctor involved can access).
+  - Role: PATIENT (must own) or DOCTOR (must be assigned)
+  - Response (200 OK): List<QuestionResponse>
+
+GET /appointments/{appointmentId}/questions/{questionId}
+  - Get a specific question.
+  - Role: PATIENT (must own) or DOCTOR (must be assigned)
+  - Response (200 OK): QuestionResponse
+
+Doctor answers a question:
+POST /appointments/{appointmentId}/questions/{questionId}/answer
+  - Role: DOCTOR (must be assigned to the appointment)
+  - Request:
     {
       "answer": "Yes, take it as prescribed."
     }
+  - Response (200 OK): updated QuestionResponse with answer and answeredAt
 
-    Response: Success message.
 
-3.7 Set consultation duration
-    PUT /doctors/me/consultation-duration
-
-    Request body:
-    {
-      "consultationDurationMinutes": 45
-    }
-
-    Response: Updated doctor.
-
---------------------------------------------------------------------------------
-4. ADMIN ENDPOINTS (ROLE_ADMIN required)
---------------------------------------------------------------------------------
-
-4.1 Manage patients
-
-    4.1.1 List all patients
-          GET /admin/patients?page=0&size=20
-          Response: Paginated list of patients.
-
-    4.1.2 Get patient details
-          GET /admin/patients/{patientId}
-
-    4.1.3 Enable/disable patient account
-          PATCH /admin/patients/{patientId}/enable?enabled=false
-
-4.2 Manage doctors
-
-    4.2.1 List all doctors
-          GET /admin/doctors?hospitalId=1&page=0&size=20
-
-    4.2.2 Approve a doctor registration
-          POST /admin/doctors/{doctorId}/approve
-          Request body:
-          {
-            "approved": true,
-            "hospitalId": 1
-          }
-
-4.3 Manage appointments
-
-    4.3.1 Get all appointments
-          GET /admin/appointments?status=PENDING&departmentId=5&dateFrom=2026-09-01&dateTo=2026-09-30
-          Response: Paginated list.
-
-    4.3.2 Approve or reject an appointment
-          PATCH /admin/appointments/{appointmentId}/approval
-          Request body:
-          {
-            "status": "APPROVED",   // or "REJECTED"
-            "doctorId": 3           // optional for approval
-          }
-          Response: Updated appointment.
-
-    4.3.3 View appointment history of a patient
-          GET /admin/patients/{patientId}/appointments
-
-4.4 Manage hospitals and departments
-
-    4.4.1 Create hospital
-          POST /admin/hospitals
-          Request body: Hospital details (name, address, phone, etc.)
-
-    4.4.2 Update hospital
-          PUT /admin/hospitals/{hospitalId}
-
-    4.4.3 Create department
-          POST /admin/hospitals/{hospitalId}/departments
-          Request body:
-          {
-            "name": "Cardiology",
-            "specialty": "Cardiology",
-            "estimatedConsultationDurationMinutes": 30
-          }
-
-4.5 Admin dashboard statistics
-    GET /admin/dashboard/stats
-
-    Response:
-    {
-      "totalPatients": 1200,
-      "totalDoctors": 45,
-      "totalAppointmentsToday": 87,
-      "averageWaitTimeMinutes": 23,
-      "noShowRate": 0.12,
-      "aiAccuracy": {
-        "noShowPrediction": 0.88,
-        "waitTimePredictionMAE": 4.5
-      }
-    }
-
-4.6 Queue analytics
-    GET /admin/queue/departments/{departmentId}?date=2026-09-01
-
-    Response:
-    {
-      "departmentName": "Cardiology",
-      "currentQueueLength": 5,
-      "averageWaitMinutes": 28,
-      "peakTime": "10:00-11:00",
-      "slotUtilization": 0.75
-    }
-
-4.7 AI performance reports
-    GET /admin/ai/predictions?type=NO_SHOW&from=2026-08-01&to=2026-08-31
-
-    Response: List of predictions with actual outcomes.
-
-4.8 Audit logs
-    GET /admin/audit-logs?adminId=2&from=2026-08-22T00:00:00Z&to=2026-08-23T00:00:00Z
-
-    Response: Paginated list of audit logs.
-
---------------------------------------------------------------------------------
-5. PUBLIC ENDPOINTS (No authentication required)
---------------------------------------------------------------------------------
-
-5.1 Get hospitals by location (nearby)
-    GET /public/hospitals/nearby?lat=5.6037&lng=-0.1870&radius=10
-
-    Response: List of hospitals within radius (km).
-
-5.2 Get distinct specialties
-    GET /public/specialties
-
-    Response: List of distinct specialties.
-
---------------------------------------------------------------------------------
-6. ERROR RESPONSES
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+8. ERROR RESPONSES (Common across all endpoints)
+-------------------------------------------------------------------------------
 
 All error responses follow this structure:
+
 {
-  "timestamp": "2026-08-22T12:34:56Z",
+  "timestamp": "2026-08-26T10:00:00Z",
   "status": 400,
   "error": "Bad Request",
   "message": "Validation failed: requestedDate must be in the future",
   "path": "/api/appointments"
 }
 
-Common HTTP status codes:
-  200 OK           – successful request
-  201 Created      – resource created
-  204 No Content   – successful deletion
-  400 Bad Request  – validation error
-  401 Unauthorized – missing or invalid token
-  403 Forbidden    – insufficient role
-  404 Not Found    – resource not found
-  409 Conflict     – duplicate or conflicting data
-  500 Internal Server Error
+Common status codes:
+  - 200 OK: success
+  - 201 Created: resource created
+  - 204 No Content: successful deletion/update with no response body
+  - 400 Bad Request: validation or client error
+  - 401 Unauthorized: missing/invalid JWT
+  - 403 Forbidden: authenticated but insufficient role
+  - 404 Not Found: resource not found
+  - 409 Conflict: duplicate or conflicting data
+  - 500 Internal Server Error: unexpected server error
 
---------------------------------------------------------------------------------
-NOTES
---------------------------------------------------------------------------------
-- All date‑time strings are in ISO 8601 format (yyyy-MM-ddTHH:mm:ssZ).
-- Dates are in yyyy-MM-dd and times in HH:mm.
-- Pagination uses page and size parameters (default page=0, size=20).
-- All JSON fields are case-sensitive.
 
+================================================================================
+END OF API REFERENCE
 ================================================================================
