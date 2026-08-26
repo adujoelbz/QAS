@@ -13,4 +13,5 @@ public interface DoctorRepository extends JpaRepository<Doctor, Long> {
     List<Doctor> findByHospitalId(Long hospitalId);
     List<Doctor> findBySpecialty(String specialty);
     List<Doctor> findBySpecialtyAndHospitalId(String specialty, Long hospitalId);
+    List<Doctor> findAllByOrderByCreatedAtDesc();
 }

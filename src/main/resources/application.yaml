@@ -10,6 +10,17 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: aduj30628@gmail.com
+    password: eozk udie aibs ryf
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 jwt:
   secret: change-this-development-secret-key-to-at-least-32-characters
@@ -23,3 +34,6 @@ cloudinary:
 app:
   cors:
     allowed-origins: http://localhost:3000,http://localhost:5173
+  notification:
+      email-from: noreply@queueless.com   # Hardcoded for development
+      base-url: ${APP_BASE_URL:http://localhost:8080}

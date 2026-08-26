@@ -88,7 +88,7 @@ CREATE TABLE doctors (
                          first_name        VARCHAR(255) NOT NULL,
                          last_name         VARCHAR(255) NOT NULL,
                          specialty         VARCHAR(255) NOT NULL,
-                         hospital_id       BIGINT NOT NULL REFERENCES hospitals(id) ON DELETE SET NULL,
+                         hospital_id       BIGINT NOT NULL REFERENCES hospitals(id) ON DELETE RESTRICT,
                          consultation_duration_minutes INT NOT NULL DEFAULT 30,
     -- JSON array of available weekdays (e.g., ["MONDAY","WEDNESDAY"]) – but detailed schedule is in doctor_availabilities
                          available_days    JSONB,

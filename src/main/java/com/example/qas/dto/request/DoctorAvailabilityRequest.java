@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalTime;
+import java.util.Map;
 
 @Data
 @Builder
@@ -27,4 +28,6 @@ public class DoctorAvailabilityRequest {
     private LocalTime endTime;
 
     private Integer slotDurationMinutes;
+
+    private Map<String, Object> availableDays;
 }

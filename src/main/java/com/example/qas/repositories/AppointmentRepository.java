@@ -2,6 +2,8 @@ package com.example.qas.repositories;
 
 import com.example.qas.models.Appointment;
 import com.example.qas.models.enums.AppointmentStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,24 +12,50 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
+    // === By user role ===
     List<Appointment> findByPatientId(Long patientId);
+    Page<Appointment> findByPatientId(Long patientId, Pageable pageable);
     List<Appointment> findByDoctorId(Long doctorId);
     List<Appointment> findByDepartmentId(Long departmentId);
+
+    // === By status ===
     List<Appointment> findByStatus(AppointmentStatus status);
     List<Appointment> findByPatientIdAndStatus(Long patientId, AppointmentStatus status);
+    // NEW: with Pageable support
+    Page<Appointment> findByPatientIdAndStatus(Long patientId, AppointmentStatus status, Pageable pageable);
     List<Appointment> findByDoctorIdAndStatus(Long doctorId, AppointmentStatus status);
     List<Appointment> findByDepartmentIdAndStatus(Long departmentId, AppointmentStatus status);
 
-    // For queue ordering – active appointments (approved/confirmed)
+    // === By date ===
+    List<Appointment> findByDoctorIdAndRequestedDateBetween(Long doctorId, LocalDate start, LocalDate end);
+    List<Appointment> findByDoctorIdAndStatusAndRequestedDate(Long doctorId, AppointmentStatus status, LocalDate date);
+    List<Appointment> findByDoctorIdAndRequestedDate(Long doctorId, LocalDate date);
+    List<Appointment> findByPatientIdAndRequestedDateBetween(Long patientId, LocalDate start, LocalDate end);
+
+    // === For admin dashboard ===
+    long countByStatus(AppointmentStatus status);
+    long countByStatusAndRequestedDate(AppointmentStatus status, LocalDate date);
+    long countByDepartmentIdAndStatus(Long departmentId, AppointmentStatus status);
+
+    // === For queue management ===
     @Query("SELECT a FROM Appointment a WHERE a.department.id = :departmentId " +
             "AND a.status IN ('APPROVED', 'CONFIRMED') " +
-            "ORDER BY a.emergencyFlag DESC, a.requestedDate, a.requestedTime")
+            "ORDER BY a.emergencyFlag DESC, a.requestedDate ASC, a.requestedTime ASC")
     List<Appointment> findActiveQueueByDepartment(@Param("departmentId") Long departmentId);
 
-    // For checking overlapping appointments (for a doctor on a given date/time)
+    @Query("SELECT COUNT(a) FROM Appointment a WHERE a.department.id = :departmentId " +
+            "AND a.status IN ('APPROVED', 'CONFIRMED') " +
+            "AND ((a.emergencyFlag = false AND a.requestedDate < :date) OR " +
+            "(a.emergencyFlag = false AND a.requestedDate = :date AND a.requestedTime <= :time))")
+    int countPatientsAheadInQueue(@Param("departmentId") Long departmentId,
+                                  @Param("date") LocalDate date,
+                                  @Param("time") LocalTime time);
+
+    // === For slot availability ===
     @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId " +
             "AND a.requestedDate = :date " +
             "AND a.requestedTime BETWEEN :startTime AND :endTime " +
@@ -37,9 +65,35 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
                                                   @Param("startTime") LocalTime startTime,
                                                   @Param("endTime") LocalTime endTime);
 
-    // For a patient, all appointments in date range
-    List<Appointment> findByPatientIdAndRequestedDateBetween(Long patientId, LocalDate start, LocalDate end);
+    // === For standby ===
+    @Query("SELECT a FROM Appointment a WHERE a.department.id = :departmentId " +
+            "AND a.status = 'PENDING' AND a.emergencyFlag = false " +
+            "ORDER BY a.createdAt ASC")
+    List<Appointment> findPendingAppointmentsForStandby(@Param("departmentId") Long departmentId);
 
-    // For department statistics
-    long countByDepartmentIdAndStatus(Long departmentId, AppointmentStatus status);
+    // === Admin filtering ===
+    @Query("SELECT a FROM Appointment a WHERE " +
+            "(:status IS NULL OR a.status = :status) AND " +
+            "(:departmentId IS NULL OR a.department.id = :departmentId) AND " +
+            "(:doctorId IS NULL OR a.doctor.id = :doctorId) AND " +
+            "(:dateFrom IS NULL OR a.requestedDate >= :dateFrom) AND " +
+            "(:dateTo IS NULL OR a.requestedDate <= :dateTo)")
+    Page<Appointment> findAppointmentsWithFilters(@Param("status") AppointmentStatus status,
+                                                  @Param("departmentId") Long departmentId,
+                                                  @Param("doctorId") Long doctorId,
+                                                  @Param("dateFrom") LocalDate dateFrom,
+                                                  @Param("dateTo") LocalDate dateTo,
+                                                  Pageable pageable);
+
+    // === Existing methods ===
+    Optional<Appointment> findByIdAndPatientId(Long id, Long patientId);
+
+    List<Appointment> findByDepartmentIdAndStatusIn(Long departmentId, List<AppointmentStatus> statuses);
+
+
+    long countByStatusAndRequestedDateBetween(AppointmentStatus status, LocalDate start, LocalDate end);
+    @Query("SELECT AVG(a.actualWaitTimeMinutes) FROM Appointment a WHERE a.status = 'COMPLETED' AND a.requestedDate BETWEEN :start AND :end")
+    Double findAverageActualWaitTime(@Param("start") LocalDate start, @Param("end") LocalDate end);
+    @Query("SELECT COUNT(a) FROM Appointment a WHERE a.status = 'NO_SHOW' AND a.requestedDate BETWEEN :start AND :end")
+    long countNoShowsBetween(@Param("start") LocalDate start, @Param("end") LocalDate end);
 }
