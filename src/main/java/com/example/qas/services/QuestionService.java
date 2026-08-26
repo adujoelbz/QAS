@@ -74,8 +74,9 @@ public class QuestionService {
 
         // Verify the current user is either the patient or the doctor for this appointment
         User currentUser = SecurityUtils.getCurrentUser(userRepository);
-        if (!currentUser.getId().equals(appointment.getPatient().getUser().getId()) &&
-                !currentUser.getId().equals(appointment.getDoctor().getUser().getId())) {
+        if (appointment.getDoctor() == null ||
+                (!currentUser.getId().equals(appointment.getPatient().getUser().getId()) &&
+                !currentUser.getId().equals(appointment.getDoctor().getUser().getId()))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to view this question");
         }
 
@@ -89,8 +90,9 @@ public class QuestionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
 
         User currentUser = SecurityUtils.getCurrentUser(userRepository);
-        if (!currentUser.getId().equals(appointment.getPatient().getUser().getId()) &&
-                !currentUser.getId().equals(appointment.getDoctor().getUser().getId())) {
+        if (appointment.getDoctor() == null ||
+                (!currentUser.getId().equals(appointment.getPatient().getUser().getId()) &&
+                !currentUser.getId().equals(appointment.getDoctor().getUser().getId()))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not authorized to view these questions");
         }
 

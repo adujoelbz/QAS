@@ -179,6 +179,11 @@ public class AppointmentService {
         if (request.getNewDate().isBefore(LocalDate.now())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot reschedule to a past date");
         }
+        if (request.getNewTime().isBefore(LocalTime.of(8, 0)) ||
+                request.getNewTime().isAfter(LocalTime.of(17, 0))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Appointment time must be between 08:00 and 17:00");
+        }
 
         // Check if the new slot is available (simplified check)
         if (appointment.getDoctor() != null) {
@@ -201,6 +206,11 @@ public class AppointmentService {
         appointment.setRequestedDate(request.getNewDate());
         appointment.setRequestedTime(request.getNewTime());
         appointment.setStatus(AppointmentStatus.PENDING);
+        appointment.setDoctor(null);
+        appointment.setConfirmedAt(null);
+        appointment.setCancelledAt(null);
+        appointment.setCompletedAt(null);
+        appointment.setQueuePosition(null);
 
         appointment = appointmentRepository.save(appointment);
 
@@ -239,6 +249,8 @@ public class AppointmentService {
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
         appointment.setCancelledAt(OffsetDateTime.now());
+        appointment.setQueuePosition(null);
+        appointment.setConfirmedAt(null);
         appointmentRepository.save(appointment);
 
         // Recalculate queue positions for this department
@@ -256,6 +268,12 @@ public class AppointmentService {
     }
 
     public QueueStatusResponse getQueueStatus(Long appointmentId) {
+        Patient patient = getCurrentPatient();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
+        if (!appointment.getPatient().getId().equals(patient.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not own this appointment");
+        }
         // Get queue status from QueueService
         QueueStatusResponse response = queueService.getQueueStatusForAppointment(appointmentId);
 
@@ -422,9 +440,30 @@ public class AppointmentService {
                     "Only pending appointments can join standby");
         }
 
-        // In a real implementation, there would be a separate StandbyQueue entity.
-        // For now, we just return a message.
+        if (Boolean.TRUE.equals(appointment.getStandbyRequested())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Appointment is already in the standby queue");
+        }
+        appointment.setStandbyRequested(true);
+        appointmentRepository.save(appointment);
         return "Successfully joined standby queue for appointment " + appointmentId;
+    }
+
+    @Transactional
+    public AppointmentResponse confirmAppointment(Long appointmentId) {
+        Patient patient = getCurrentPatient();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
+        if (!appointment.getPatient().getId().equals(patient.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not own this appointment");
+        }
+        if (appointment.getStatus() != AppointmentStatus.APPROVED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only approved appointments can be confirmed");
+        }
+        appointment.setStatus(AppointmentStatus.CONFIRMED);
+        appointment.setConfirmedAt(OffsetDateTime.now());
+        appointmentRepository.save(appointment);
+        queueService.recalcQueuePositionsForDepartment(appointment.getDepartment().getId());
+        return appointmentMapper.toResponse(appointment);
     }
 
     // === Helper methods ===

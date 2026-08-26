@@ -4,15 +4,19 @@ import com.example.qas.dto.response.QueueAnalyticsResponse;
 import com.example.qas.dto.response.QueueStatusResponse;
 import com.example.qas.models.Appointment;
 import com.example.qas.models.Department;
+import com.example.qas.models.Doctor;
 import com.example.qas.models.enums.AppointmentStatus;
 import com.example.qas.repositories.AppointmentRepository;
 import com.example.qas.repositories.DepartmentRepository;
+import com.example.qas.repositories.DoctorRepository;
+import com.example.qas.repositories.DoctorAvailabilityRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalTime;
 import java.util.List;
 
 @Service
@@ -21,6 +25,8 @@ public class QueueService {
 
     private final AppointmentRepository appointmentRepository;
     private final DepartmentRepository departmentRepository;  // Added this
+    private final DoctorRepository doctorRepository;
+    private final DoctorAvailabilityRepository doctorAvailabilityRepository;
 
     // === Queue status for a specific appointment ===
 
@@ -96,14 +102,40 @@ public class QueueService {
 
     @Transactional
     public void allocateStandbySlot(Long departmentId) {
-        List<Appointment> pending = appointmentRepository.findPendingAppointmentsForStandby(departmentId);
+        List<Appointment> pending = appointmentRepository.findStandbyCandidates(departmentId);
 
         if (pending.isEmpty()) {
             return;
         }
 
-        Appointment standbyCandidate = pending.get(0);
-        System.out.println("Standby: Candidate appointment " + standbyCandidate.getId() + " could be assigned.");
+        for (Appointment standbyCandidate : pending) {
+            Doctor doctor = findAvailableDoctor(standbyCandidate);
+            if (doctor == null) continue;
+            standbyCandidate.setDoctor(doctor);
+            standbyCandidate.setStandbyRequested(false);
+            standbyCandidate.setStatus(AppointmentStatus.APPROVED);
+            appointmentRepository.save(standbyCandidate);
+            recalcQueuePositionsForDepartment(departmentId);
+            return;
+        }
+    }
+
+    private Doctor findAvailableDoctor(Appointment appointment) {
+        Department department = appointment.getDepartment();
+        List<Doctor> doctors = doctorRepository.findBySpecialtyAndHospitalId(
+                department.getSpecialty(), department.getHospital().getId());
+        String day = appointment.getRequestedDate().getDayOfWeek().name();
+        int duration = department.getEstimatedConsultationDurationMinutes();
+        for (Doctor doctor : doctors) {
+            boolean scheduled = doctorAvailabilityRepository.findByDoctorIdAndDayOfWeek(doctor.getId(), day)
+                    .stream().anyMatch(a -> !appointment.getRequestedTime().isBefore(a.getStartTime())
+                            && !appointment.getRequestedTime().plusMinutes(duration).isAfter(a.getEndTime()));
+            if (!scheduled) continue;
+            LocalTime end = appointment.getRequestedTime().plusMinutes(duration);
+            if (appointmentRepository.findConflictingAppointments(doctor.getId(), appointment.getRequestedDate(),
+                    appointment.getRequestedTime(), end).isEmpty()) return doctor;
+        }
+        return null;
     }
 
     // === Queue analytics ===
@@ -145,6 +177,7 @@ public class QueueService {
 
     @Transactional
     public void recalcAllQueuePositions() {
-        // Placeholder – in production, you might run this periodically
+        departmentRepository.findAll().forEach(department ->
+                recalcQueuePositionsForDepartment(department.getId()));
     }
 }

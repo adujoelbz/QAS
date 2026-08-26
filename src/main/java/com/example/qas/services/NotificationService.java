@@ -13,6 +13,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -127,6 +129,25 @@ public class NotificationService {
         sendEmailNotification(appointment, email, subject, body, NotificationType.EMAIL);
     }
 
+    @Transactional
+    public void retryFailedNotification(Long notificationId) {
+        Notification notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Notification not found"));
+        if (notification.getStatus() != NotificationStatus.FAILED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only failed notifications can be retried");
+        }
+        try {
+            emailProvider.sendEmail(notification.getRecipient(), notification.getSubject(),
+                    notification.getContent(), false);
+            notification.setStatus(NotificationStatus.SENT);
+            notification.setSentAt(OffsetDateTime.now());
+            notification.setErrorMessage(null);
+        } catch (Exception e) {
+            notification.setErrorMessage(trimError(e.getMessage()));
+        }
+        notificationRepository.save(notification);
+    }
+
     // === PRIVATE HELPERS ===
 
     private void sendEmailNotification(Appointment appointment, String recipient, String subject, String body, NotificationType type) {
@@ -134,8 +155,13 @@ public class NotificationService {
             emailProvider.sendEmail(recipient, subject, body, false);
             saveNotification(appointment, recipient, type, subject, body, NotificationStatus.SENT);
         } catch (Exception e) {
-            saveNotification(appointment, recipient, type, subject, body, NotificationStatus.FAILED, e.getMessage());
+            saveNotification(appointment, recipient, type, subject, body, NotificationStatus.FAILED, trimError(e.getMessage()));
         }
+    }
+
+    private String trimError(String message) {
+        if (message == null || message.isBlank()) return "Notification delivery failed";
+        return message.length() > 2000 ? message.substring(0, 2000) : message;
     }
 
     private void saveNotification(Appointment appointment, String recipient, NotificationType type,

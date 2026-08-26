@@ -12,4 +12,5 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     List<Notification> findByAppointmentId(Long appointmentId);
     List<Notification> findByStatus(NotificationStatus status);
     List<Notification> findByAppointmentIdAndStatus(Long appointmentId, NotificationStatus status);
+    boolean existsByAppointmentIdAndSubjectAndStatus(Long appointmentId, String subject, NotificationStatus status);
 }

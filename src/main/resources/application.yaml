@@ -1,4 +1,6 @@
 spring:
+  jpa:
+    open-in-view: false
   datasource:
     url: jdbc:postgresql://localhost:5433/qas
     username: postgres
@@ -44,3 +46,7 @@ ai:
     url: ${AI_SERVICE_URL:http://localhost:5000}
     timeout: 5000  # milliseconds
     enabled: ${AI_ENABLED:true}
+
+logging:
+  pattern:
+    level: "%5p [corr=%X{correlationId:-none}]"

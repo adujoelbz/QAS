@@ -1,11 +1,22 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import random
 import datetime
 import os
 
 app = Flask(__name__)
 CORS(app)
+
+def payload():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ValueError("JSON object is required")
+    return data
+
+def bounded_number(value, default, minimum, maximum):
+    try:
+        return max(minimum, min(maximum, float(value)))
+    except (TypeError, ValueError):
+        return default
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -13,52 +24,48 @@ def health():
 
 @app.route('/recommend-slots', methods=['POST'])
 def recommend_slots():
-    data = request.json
-    preferred_date = data.get('preferredDate')
-    slot_duration = data.get('slotDurationMinutes', 30)
-
-    slots = []
-    start_hour = 8
-    end_hour = 17
-
-    # Generate slots
-    for hour in range(start_hour, end_hour):
-        for minute in [0, 30]:
-            time_obj = datetime.time(hour, minute)
-            # Skip if slot is before preferred time (optional)
-            slots.append({
-                "date": preferred_date,
-                "time": time_obj.strftime("%H:%M"),
-                "estimatedWaitMinutes": random.randint(5, 30),
-                "confidence": round(0.6 + 0.4 * random.random(), 2),
-                "reason": "AI suggested slot based on department schedule"
-            })
-
-    # Return top 5 slots (or all)
-    return jsonify({"slots": slots[:5]})
+    try:
+        data = payload()
+        preferred_date = data.get('preferredDate')
+        if not preferred_date:
+            raise ValueError("preferredDate is required")
+        duration = int(bounded_number(data.get('slotDurationMinutes'), 30, 15, 180))
+        queue_length = int(bounded_number(data.get('queueLength'), 0, 0, 1000))
+        preferred = data.get('preferredTime')
+        preferred_minutes = None
+        if preferred:
+            preferred_minutes = datetime.datetime.strptime(preferred[:5], "%H:%M").hour * 60 + datetime.datetime.strptime(preferred[:5], "%H:%M").minute
+        slots = []
+        current = datetime.datetime.combine(datetime.date.today(), datetime.time(8, 0))
+        end = datetime.datetime.combine(datetime.date.today(), datetime.time(17, 0))
+        while current + datetime.timedelta(minutes=duration) <= end:
+            minutes = current.hour * 60 + current.minute
+            distance = abs(minutes - preferred_minutes) if preferred_minutes is not None else 0
+            wait = queue_length * duration + max(0, (minutes - 8 * 60) // 60 * 2)
+            confidence = max(0.55, min(0.95, 0.92 - queue_length * 0.01 - distance / 2400))
+            slots.append({"date": preferred_date, "time": current.strftime("%H:%M"),
+                          "estimatedWaitMinutes": wait, "confidence": round(confidence, 2),
+                          "reason": "Ranked by queue load and proximity to the preferred time"})
+            current += datetime.timedelta(minutes=duration)
+        slots.sort(key=lambda slot: (abs((int(slot['time'][:2]) * 60 + int(slot['time'][3:])) - preferred_minutes) if preferred_minutes is not None else 0, slot['estimatedWaitMinutes']))
+        return jsonify({"slots": slots[:5]})
+    except (ValueError, TypeError) as error:
+        return jsonify({"error": str(error)}), 400
 
 @app.route('/predict-no-show', methods=['POST'])
 def predict_no_show():
-    data = request.json
-    # In production, use actual ML model
-    # For now, use a simple heuristic
-    app_time = data.get('appointmentTime')
-    if app_time:
-        hour = int(app_time.split(':')[0])
-        # Early morning: more likely to show
-        if hour < 9:
-            probability = 0.02 + 0.05 * random.random()
-        # Late afternoon: higher no-show
-        elif hour > 16:
-            probability = 0.08 + 0.12 * random.random()
-        else:
-            probability = 0.03 + 0.07 * random.random()
-    else:
-        probability = 0.05 + 0.10 * random.random()
-
-    # Add some randomness
-    probability = min(probability + random.uniform(-0.02, 0.04), 0.35)
-    probability = max(probability, 0.01)
+    try:
+        data = payload()
+        hour = int(str(data.get('appointmentTime', '12:00'))[:2])
+        previous = int(bounded_number(data.get('previousNoShows'), 0, 0, 20))
+        reminder_sent = bool(data.get('reminderSent', False))
+        probability = 0.03 + min(previous * 0.04, 0.24)
+        if hour < 9: probability -= 0.01
+        if hour >= 16: probability += 0.06
+        if not reminder_sent: probability += 0.03
+        probability = max(0.01, min(0.45, probability))
+    except (ValueError, TypeError) as error:
+        return jsonify({"error": str(error)}), 400
 
     risk_level = "HIGH" if probability > 0.15 else "MEDIUM" if probability > 0.07 else "LOW"
     recommendation = "Send reminder and confirmation request" if risk_level == "HIGH" else "Send standard reminder" if risk_level == "MEDIUM" else "Normal"
@@ -71,21 +78,19 @@ def predict_no_show():
 
 @app.route('/predict-wait-time', methods=['POST'])
 def predict_wait_time():
-    data = request.json
-    patients_ahead = data.get('patientsAhead', 0)
-    avg_duration = data.get('averageConsultationDuration', 30)
-    queue_length = data.get('currentQueueLength', 0)
-
-    # Base calculation: patients ahead * average duration
-    base_wait = patients_ahead * avg_duration
-
-    # Add some variability
-    variance = random.randint(-5, 15)
-    wait = max(0, base_wait + variance)
-
-    # Confidence decreases with queue length
-    confidence = max(60, 90 - (queue_length * 0.5))
-    confidence = min(95, confidence)
+    try:
+        data = payload()
+        patients_ahead = int(bounded_number(data.get('patientsAhead'), 0, 0, 1000))
+        avg_duration = int(bounded_number(data.get('averageConsultationDuration'), 30, 5, 240))
+        queue_length = int(bounded_number(data.get('currentQueueLength'), 0, 0, 1000))
+        durations = data.get('previousAppointmentDurations') or []
+        valid_durations = [float(v) for v in durations if isinstance(v, (int, float)) and 5 <= v <= 240]
+        if valid_durations:
+            avg_duration = round((avg_duration + sum(valid_durations) / len(valid_durations)) / 2)
+        wait = patients_ahead * avg_duration
+        confidence = max(50, min(95, 92 - queue_length * 0.4 - (10 if not valid_durations else 0)))
+    except (ValueError, TypeError) as error:
+        return jsonify({"error": str(error)}), 400
 
     return jsonify({
         "predictedWaitMinutes": int(wait),

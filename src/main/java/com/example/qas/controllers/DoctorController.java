@@ -18,7 +18,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/doctors")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('DOCTOR')")
 public class DoctorController {
 
     private final DoctorService doctorService;
@@ -26,17 +25,20 @@ public class DoctorController {
     // === Profile and availability ===
 
     @GetMapping("/me")
+    @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DoctorProfileResponse> getMyProfile() {
         return ResponseEntity.ok(doctorService.getCurrentDoctorProfile());
     }
 
     @PutMapping("/me/availability")
+    @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DoctorProfileResponse> updateAvailability(
             @Valid @RequestBody DoctorAvailabilityRequest request) {
         return ResponseEntity.ok(doctorService.updateDoctorAvailability(request));
     }
 
     @PutMapping("/me/consultation-duration")
+    @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<DoctorProfileResponse> setConsultationDuration(
             @Valid @RequestBody ConsultationDurationRequest request) {
         return ResponseEntity.ok(doctorService.setConsultationDuration(request));
@@ -45,6 +47,7 @@ public class DoctorController {
     // === Schedule and appointments ===
 
     @GetMapping("/me/schedule")
+    @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<List<DoctorScheduleResponse>> getSchedule(
             @RequestParam LocalDate dateFrom,
             @RequestParam LocalDate dateTo) {
@@ -52,6 +55,7 @@ public class DoctorController {
     }
 
     @GetMapping("/me/appointments")
+    @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<List<AppointmentResponse>> getAppointments(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) LocalDate date) {
@@ -59,6 +63,7 @@ public class DoctorController {
     }
 
     @PatchMapping("/appointments/{appointmentId}/status")
+    @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<AppointmentResponse> updateAppointmentStatus(
             @PathVariable Long appointmentId,
             @RequestParam String status,
@@ -66,12 +71,10 @@ public class DoctorController {
         return ResponseEntity.ok(doctorService.updateConsultationStatus(appointmentId, status, actualWaitTime));
     }
 
-    @PatchMapping("/admin/doctors/{userId}/approve")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> approveDoctor(@PathVariable Long userId,
-                                              @RequestParam Long hospitalId,
-                                              @RequestParam boolean approved) {
-        doctorService.approveDoctorRegistration(userId, hospitalId, approved);
-        return ResponseEntity.noContent().build();
+    @PostMapping("/appointments/{appointmentId}/start")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<AppointmentResponse> startConsultation(@PathVariable Long appointmentId) {
+        return ResponseEntity.ok(doctorService.startConsultation(appointmentId));
     }
+
 }

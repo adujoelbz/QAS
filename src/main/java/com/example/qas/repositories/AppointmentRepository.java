@@ -58,7 +58,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     // === For slot availability ===
     @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId " +
             "AND a.requestedDate = :date " +
-            "AND a.requestedTime BETWEEN :startTime AND :endTime " +
+            "AND a.requestedTime < :endTime " +
+            "AND FUNCTION('ADD_SECONDS', a.requestedTime, 1800) > :startTime " +
             "AND a.status IN ('APPROVED', 'CONFIRMED')")
     List<Appointment> findConflictingAppointments(@Param("doctorId") Long doctorId,
                                                   @Param("date") LocalDate date,
@@ -70,6 +71,11 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             "AND a.status = 'PENDING' AND a.emergencyFlag = false " +
             "ORDER BY a.createdAt ASC")
     List<Appointment> findPendingAppointmentsForStandby(@Param("departmentId") Long departmentId);
+
+    @Query("SELECT a FROM Appointment a WHERE a.department.id = :departmentId " +
+            "AND a.status = 'PENDING' AND a.standbyRequested = true " +
+            "ORDER BY a.emergencyFlag DESC, a.createdAt ASC")
+    List<Appointment> findStandbyCandidates(@Param("departmentId") Long departmentId);
 
     // === Admin filtering ===
     @Query("SELECT a FROM Appointment a WHERE " +
@@ -97,4 +103,9 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     @Query("SELECT COUNT(a) FROM Appointment a WHERE a.status = 'NO_SHOW' AND a.requestedDate BETWEEN :start AND :end")
     long countNoShowsBetween(@Param("start") LocalDate start, @Param("end") LocalDate end);
     List<Appointment> findByRequestedDateAndStatus(LocalDate date, AppointmentStatus status);
+
+    @Query("SELECT a FROM Appointment a JOIN FETCH a.patient JOIN FETCH a.department d JOIN FETCH d.hospital " +
+            "LEFT JOIN FETCH a.doctor WHERE a.requestedDate BETWEEN :from AND :to " +
+            "AND a.status IN ('COMPLETED', 'NO_SHOW', 'CANCELLED') ORDER BY a.requestedDate, a.requestedTime")
+    List<Appointment> findTrainingAppointments(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

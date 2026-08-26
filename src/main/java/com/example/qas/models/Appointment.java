@@ -63,6 +63,11 @@ public class Appointment {
     @Column(name = "emergency_flag", nullable = false)
     private Boolean emergencyFlag = false;
 
+    @NotNull
+    @ColumnDefault("false")
+    @Column(name = "standby_requested", nullable = false)
+    private Boolean standbyRequested = false;
+
     @Column(name = "queue_position")
     private Integer queuePosition;
 
@@ -90,6 +95,12 @@ public class Appointment {
 
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
+
+    @Column(name = "consultation_started_at")
+    private OffsetDateTime consultationStartedAt;
+
+    @Column(name = "consultation_ended_at")
+    private OffsetDateTime consultationEndedAt;
 
     @PrePersist
     protected void onCreate() {

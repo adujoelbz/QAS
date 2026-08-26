@@ -96,6 +96,12 @@ public class AppointmentController {
         return ResponseEntity.ok(response);
     }
 
+    @PatchMapping("/appointments/{appointmentId}/confirm")
+    @PreAuthorize("hasRole('PATIENT')")
+    public ResponseEntity<AppointmentResponse> confirmAppointment(@PathVariable Long appointmentId) {
+        return ResponseEntity.ok(appointmentService.confirmAppointment(appointmentId));
+    }
+
     // === ADMIN ENDPOINTS ===
 
     @GetMapping("/admin/appointments")

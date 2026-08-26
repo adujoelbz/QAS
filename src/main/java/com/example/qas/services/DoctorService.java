@@ -44,6 +44,7 @@ public class DoctorService {
     private final DoctorMapper doctorMapper;
     private final QueueService queueService;            // Added
     private final NotificationService notificationService; // Added
+    private final AppointmentTransitionPolicy appointmentTransitionPolicy;
 
     // === Doctor's own profile ===
 
@@ -71,6 +72,10 @@ public class DoctorService {
     // === Schedule and appointments ===
 
     public List<DoctorScheduleResponse> getDoctorSchedule(LocalDate dateFrom, LocalDate dateTo) {
+        if (dateFrom == null || dateTo == null || dateTo.isBefore(dateFrom)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "dateTo must be on or after dateFrom");
+        }
         Doctor doctor = getCurrentDoctor();
         List<Appointment> appointments = appointmentRepository
                 .findByDoctorIdAndRequestedDateBetween(doctor.getId(), dateFrom, dateTo);
@@ -124,12 +129,30 @@ public class DoctorService {
     }
 
     @Transactional
+    public AppointmentResponse startConsultation(Long appointmentId) {
+        Doctor doctor = getCurrentDoctor();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
+        if (appointment.getDoctor() == null || !appointment.getDoctor().getId().equals(doctor.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this appointment");
+        }
+        if (appointment.getStatus() != AppointmentStatus.APPROVED && appointment.getStatus() != AppointmentStatus.CONFIRMED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only approved or confirmed appointments can start");
+        }
+        if (appointment.getConsultationStartedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Consultation has already started");
+        }
+        appointment.setConsultationStartedAt(OffsetDateTime.now());
+        return appointmentMapper.toResponse(appointmentRepository.save(appointment));
+    }
+
+    @Transactional
     public AppointmentResponse updateConsultationStatus(Long appointmentId, String status, Integer actualWaitTime) {
         Doctor doctor = getCurrentDoctor();
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
 
-        if (!appointment.getDoctor().getId().equals(doctor.getId())) {
+        if (appointment.getDoctor() == null || !appointment.getDoctor().getId().equals(doctor.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this appointment");
         }
 
@@ -140,14 +163,23 @@ public class DoctorService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status value");
         }
 
-        // Validate allowed transitions
-        if (newStatus == AppointmentStatus.COMPLETED || newStatus == AppointmentStatus.NO_SHOW) {
-            if (actualWaitTime != null) {
-                appointment.setActualWaitTimeMinutes(actualWaitTime);
+        appointmentTransitionPolicy.validateDoctorOutcome(appointment.getStatus(), newStatus);
+        if (actualWaitTime != null && actualWaitTime < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Actual wait time cannot be negative");
+        }
+        if (actualWaitTime != null) {
+            appointment.setActualWaitTimeMinutes(actualWaitTime);
+        }
+        if (newStatus == AppointmentStatus.COMPLETED) {
+            if (appointment.getConsultationStartedAt() == null) {
+                appointment.setConsultationStartedAt(OffsetDateTime.now());
             }
-            if (newStatus == AppointmentStatus.COMPLETED) {
-                appointment.setCompletedAt(OffsetDateTime.now());
-            }
+            appointment.setConsultationEndedAt(OffsetDateTime.now());
+            appointment.setCompletedAt(OffsetDateTime.now());
+            appointment.setCancelledAt(null);
+        } else {
+            appointment.setCompletedAt(null);
         }
 
         appointment.setStatus(newStatus);
