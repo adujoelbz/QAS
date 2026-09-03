@@ -1,0 +1,7 @@
+{
+  "rows":15.0,
+  "noShowRows":15.0,
+  "noShowAccuracy":0.9333,
+  "waitRows":10.0,
+  "waitMeanAbsoluteError":3.6
+}

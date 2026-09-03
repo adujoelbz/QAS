@@ -2,9 +2,25 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
 import os
+from pathlib import Path
+
+import joblib
 
 app = Flask(__name__)
 CORS(app)
+MODEL_DIR = Path(__file__).resolve().parent / "models"
+
+
+def load_model(name):
+    path = MODEL_DIR / name
+    try:
+        return joblib.load(path) if path.exists() else None
+    except Exception:
+        return None
+
+
+NO_SHOW_MODEL = load_model("no_show.joblib")
+WAIT_MODEL = load_model("wait_time.joblib")
 
 def payload():
     data = request.get_json(silent=True)
@@ -20,7 +36,14 @@ def bounded_number(value, default, minimum, maximum):
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "healthy", "service": "AI Service"})
+    return jsonify({
+        "status": "healthy",
+        "service": "AI Service",
+        "models": {
+            "noShow": NO_SHOW_MODEL is not None,
+            "waitTime": WAIT_MODEL is not None,
+        },
+    })
 
 @app.route('/recommend-slots', methods=['POST'])
 def recommend_slots():
@@ -67,6 +90,18 @@ def predict_no_show():
     except (ValueError, TypeError) as error:
         return jsonify({"error": str(error)}), 400
 
+    if NO_SHOW_MODEL:
+        features = [[
+            bounded_number(data.get("patientId"), -1, -1, 100000000),
+            bounded_number(data.get("doctorId"), -1, -1, 100000000),
+            hour,
+            bounded_number(data.get("queuePosition"), 0, 0, 1000),
+            1 if data.get("emergencyFlag", False) else 0,
+            1 if reminder_sent else 0,
+        ]]
+        probability = float(NO_SHOW_MODEL["model"].predict_proba(features)[0][1])
+        probability = max(0.01, min(0.99, probability))
+
     risk_level = "HIGH" if probability > 0.15 else "MEDIUM" if probability > 0.07 else "LOW"
     recommendation = "Send reminder and confirmation request" if risk_level == "HIGH" else "Send standard reminder" if risk_level == "MEDIUM" else "Normal"
 
@@ -91,6 +126,11 @@ def predict_wait_time():
         confidence = max(50, min(95, 92 - queue_length * 0.4 - (10 if not valid_durations else 0)))
     except (ValueError, TypeError) as error:
         return jsonify({"error": str(error)}), 400
+
+    if WAIT_MODEL:
+        features = [[max(1, patients_ahead + 1), patients_ahead, avg_duration, queue_length]]
+        wait = max(0, int(round(float(WAIT_MODEL["model"].predict(features)[0]))))
+        confidence = max(50, min(95, confidence + 5))
 
     return jsonify({
         "predictedWaitMinutes": int(wait),

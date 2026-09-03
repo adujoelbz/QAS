@@ -51,6 +51,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error", "/api/health", "/api/ready", "/api/auth/**", "/api/public/**").permitAll()
                         .requestMatchers("/api/patients/**").hasAuthority("ROLE_PATIENT")
+                        .requestMatchers("/api/appointments/**").hasAuthority("ROLE_PATIENT")
                         .requestMatchers("/api/doctors/**").hasRole("DOCTOR")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/doctors/**").hasRole("DOCTOR")

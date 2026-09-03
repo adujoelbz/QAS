@@ -41,6 +41,7 @@ public class PatientService {
 
     public record FileResource(String url, String originalFilename) {}
 
+    @Transactional(readOnly = true)
     public PatientProfileResponse getCurrentPatientProfile() {
         Patient patient = getCurrentPatient();
         return patientMapper.toProfileResponse(patient);

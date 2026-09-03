@@ -58,8 +58,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     // === For slot availability ===
     @Query("SELECT a FROM Appointment a WHERE a.doctor.id = :doctorId " +
             "AND a.requestedDate = :date " +
+            "AND a.requestedTime >= :startTime " +
             "AND a.requestedTime < :endTime " +
-            "AND FUNCTION('ADD_SECONDS', a.requestedTime, 1800) > :startTime " +
             "AND a.status IN ('APPROVED', 'CONFIRMED')")
     List<Appointment> findConflictingAppointments(@Param("doctorId") Long doctorId,
                                                   @Param("date") LocalDate date,
@@ -79,18 +79,17 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
     // === Admin filtering ===
     @Query("SELECT a FROM Appointment a WHERE " +
-            "(:status IS NULL OR a.status = :status) AND " +
-            "(:departmentId IS NULL OR a.department.id = :departmentId) AND " +
-            "(:doctorId IS NULL OR a.doctor.id = :doctorId) AND " +
-            "(:dateFrom IS NULL OR a.requestedDate >= :dateFrom) AND " +
-            "(:dateTo IS NULL OR a.requestedDate <= :dateTo)")
+            "a.status = COALESCE(:status, a.status) AND " +
+            "a.department.id = COALESCE(:departmentId, a.department.id) AND " +
+            "a.doctor.id = COALESCE(:doctorId, a.doctor.id) AND " +
+            "a.requestedDate >= COALESCE(:dateFrom, a.requestedDate) AND " +
+            "a.requestedDate <= COALESCE(:dateTo, a.requestedDate)")
     Page<Appointment> findAppointmentsWithFilters(@Param("status") AppointmentStatus status,
                                                   @Param("departmentId") Long departmentId,
                                                   @Param("doctorId") Long doctorId,
                                                   @Param("dateFrom") LocalDate dateFrom,
                                                   @Param("dateTo") LocalDate dateTo,
                                                   Pageable pageable);
-
     // === Existing methods ===
     Optional<Appointment> findByIdAndPatientId(Long id, Long patientId);
 

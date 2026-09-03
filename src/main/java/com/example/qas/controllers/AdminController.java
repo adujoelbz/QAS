@@ -4,17 +4,23 @@ import com.example.qas.dto.response.AuditLogResponse;
 import com.example.qas.dto.response.DashboardStatsResponse;
 import com.example.qas.dto.response.PredictionReport;
 import com.example.qas.dto.response.QueueAnalyticsResponse;
+import com.example.qas.dto.request.AdminCreateRequest;
+import com.example.qas.dto.request.DoctorCreateRequest;
+import com.example.qas.dto.response.ProvisionedAccountResponse;
 import com.example.qas.models.enums.PredictionType;
 import com.example.qas.services.AdminService;
 import com.example.qas.services.DoctorService;
 import com.example.qas.services.NotificationService;
 import com.example.qas.services.TrainingDataExportService;
+import com.example.qas.services.AccountProvisioningService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -34,6 +40,17 @@ public class AdminController {
     private final DoctorService doctorService;
     private final NotificationService notificationService;
     private final TrainingDataExportService trainingDataExportService;
+    private final AccountProvisioningService accountProvisioningService;
+
+    @PostMapping("/users/admin")
+    public ResponseEntity<ProvisionedAccountResponse> createAdmin(@Valid @RequestBody AdminCreateRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(accountProvisioningService.createAdmin(request));
+    }
+
+    @PostMapping("/users/doctor")
+    public ResponseEntity<ProvisionedAccountResponse> createDoctor(@Valid @RequestBody DoctorCreateRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(accountProvisioningService.createDoctor(request));
+    }
 
     @GetMapping(value = "/ai/training-data", produces = "text/csv")
     public ResponseEntity<String> exportTrainingData(@RequestParam LocalDate from, @RequestParam LocalDate to) {

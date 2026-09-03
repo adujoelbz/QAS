@@ -33,14 +33,14 @@ public class AppointmentController {
     // === PATIENT ENDPOINTS ===
 
     @PostMapping("/appointments")
-    @PreAuthorize("hasRole('PATIENT')")
+    //@PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<AppointmentResponse> requestAppointment(@Valid @RequestBody AppointmentRequest request) {
         AppointmentResponse response = appointmentService.requestAppointment(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PostMapping("/appointments/recommend")
-    @PreAuthorize("hasRole('PATIENT')")
+    //@PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<List<SlotRecommendation>> getRecommendedSlots(
             @RequestParam Long departmentId,
             @RequestParam LocalDate preferredDate,
@@ -51,7 +51,7 @@ public class AppointmentController {
     }
 
     @GetMapping("/appointments")
-    @PreAuthorize("hasRole('PATIENT')")
+    //@PreAuthorize("hasRole('PATIENT')")
     public ResponseEntity<Page<AppointmentResponse>> getMyAppointments(
             @RequestParam(required = false) String status,
             @PageableDefault(size = 10) Pageable pageable) {

@@ -267,6 +267,7 @@ public class AppointmentService {
         }
     }
 
+    @Transactional(readOnly = true)
     public QueueStatusResponse getQueueStatus(Long appointmentId) {
         Patient patient = getCurrentPatient();
         Appointment appointment = appointmentRepository.findById(appointmentId)
