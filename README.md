@@ -35,7 +35,7 @@ In the backend service Variables tab, add:
 
 ```text
 SPRING_PROFILES_ACTIVE=prod
-SPRING_DATASOURCE_URL=jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
+SPRING_DATASOURCE_URL=jdbc:${{Postgres.DATABASE_URL}}
 SPRING_DATASOURCE_USERNAME=${{Postgres.PGUSER}}
 SPRING_DATASOURCE_PASSWORD=${{Postgres.PGPASSWORD}}
 JWT_SECRET=<a-random-secret-at-least-32-characters>
@@ -58,5 +58,7 @@ CLOUDINARY_API_SECRET=<api secret>
 ```
 
 The sender address must be verified in SendGrid under **Sender Authentication**. SendGrid accepts the API request with HTTP `202`; delivery failures are recorded in the notifications table and can be retried through the admin notification retry endpoint.
+
+Keep `SPRING_DATASOURCE_URL` on one physical line with no spaces or line breaks. It should resolve to a value like `jdbc:postgresql://postgres.railway.internal:5432/railway`. If you use the component fallback instead, set `PGHOST`, `PGPORT`, and `PGDATABASE` as separate variables; do not paste a wrapped or multi-line URL.
 
 After the first deploy, open the generated Railway domain and verify `/api/health` returns `{"status":"UP"}`. Flyway runs the database migrations automatically at startup. Keep `AI_ENABLED=false` unless the Flask AI service is also deployed and `AI_SERVICE_URL` points to its public Railway URL; the backend's deterministic fallback remains available.

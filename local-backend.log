@@ -76,3 +76,4 @@
 2026-09-04T16:18:26.226Z  INFO [corr=none] 16900 --- [0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
 2026-09-04T16:18:26.229Z  INFO [corr=none] 16900 --- [0.0-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 3 ms
 2026-09-04T16:18:26.324Z  INFO [corr=51016cef-fd11-4fdc-89be-2287f550f223] 16900 --- [0.0-8080-exec-1] c.e.qas.security.RequestLoggingFilter    : http_request method=GET path=/api/health status=200 durationMs=63
+2026-09-04T16:58:58.652Z  INFO [corr=7c11ee5a-968b-478f-b76b-f9ed8d86cf67] 16900 --- [0.0-8080-exec-3] c.e.qas.security.RequestLoggingFilter    : http_request method=GET path=/api/health status=200 durationMs=194
