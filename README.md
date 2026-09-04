@@ -26,3 +26,35 @@ python train_models.py path\to\training-data.csv
 The command writes `models/no_show.joblib`, `models/wait_time.joblib`, and `models/metrics.json`. Version 2 uses temporal features (appointment hour and weekday), queue state, emergency/reminder flags, and each patient's chronological no-show history. `metrics.json` reports cross-validated accuracy, balanced accuracy, AUC, and wait-time MAE; a `lowConfidence` warning is included when the export is too small for dependable evaluation.
 
 Restart the Flask service after retraining so it reloads the new artifacts. Check `GET http://localhost:5000/health` and confirm both model versions report `2`.
+
+## Deploy the backend to Railway
+
+Create a Railway project with two services: a PostgreSQL database and this repository. Railway detects `railway.toml`, builds the Spring Boot jar with Maven, and starts it on Railway's assigned `PORT`.
+
+In the backend service Variables tab, add:
+
+```text
+SPRING_PROFILES_ACTIVE=prod
+SPRING_DATASOURCE_URL=jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
+SPRING_DATASOURCE_USERNAME=${{Postgres.PGUSER}}
+SPRING_DATASOURCE_PASSWORD=${{Postgres.PGPASSWORD}}
+JWT_SECRET=<a-random-secret-at-least-32-characters>
+CORS_ALLOWED_ORIGINS=https://<your-frontend-domain>
+APP_BASE_URL=https://<your-backend-domain>
+AI_ENABLED=false
+```
+
+Spring profile files are named `application-dev.yaml` and `application-prod.yaml`. Run locally with `SPRING_PROFILES_ACTIVE=dev`; Railway must use `SPRING_PROFILES_ACTIVE=prod`. The production profile intentionally requires `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `JWT_SECRET`, `CORS_ALLOWED_ORIGINS`, and `APP_BASE_URL` so a deployment cannot silently start with localhost or development values.
+
+Set these optional variables if the application needs email or medical-history uploads:
+
+```text
+MAIL_USERNAME=<smtp username>
+MAIL_PASSWORD=<smtp password or app password>
+MAIL_FROM=<sender address>
+CLOUDINARY_CLOUD_NAME=<cloud name>
+CLOUDINARY_API_KEY=<api key>
+CLOUDINARY_API_SECRET=<api secret>
+```
+
+After the first deploy, open the generated Railway domain and verify `/api/health` returns `{"status":"UP"}`. Flyway runs the database migrations automatically at startup. Keep `AI_ENABLED=false` unless the Flask AI service is also deployed and `AI_SERVICE_URL` points to its public Railway URL; the backend's deterministic fallback remains available.

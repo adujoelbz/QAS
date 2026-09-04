@@ -146,12 +146,6 @@
                         <version>42.7.3</version>
                     </dependency>
                 </dependencies>
-                <configuration>
-                    <url>jdbc:postgresql://localhost:5432/qas</url>
-                    <user>postgres</user>
-                    <password>418250112</password>
-                    <cleanDisabled>false</cleanDisabled>
-                </configuration>
             </plugin>
             <plugin>
 				<groupId>org.apache.maven.plugins</groupId>

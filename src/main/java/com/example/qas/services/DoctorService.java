@@ -78,6 +78,7 @@ public class DoctorService {
 
     // === Schedule and appointments ===
 
+    @Transactional(readOnly = true)
     public List<DoctorScheduleResponse> getDoctorSchedule(LocalDate dateFrom, LocalDate dateTo) {
         if (dateFrom == null || dateTo == null || dateTo.isBefore(dateFrom)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
