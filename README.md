@@ -46,15 +46,17 @@ AI_ENABLED=false
 
 Spring profile files are named `application-dev.yaml` and `application-prod.yaml`. Run locally with `SPRING_PROFILES_ACTIVE=dev`; Railway must use `SPRING_PROFILES_ACTIVE=prod`. The production profile intentionally requires `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `JWT_SECRET`, `CORS_ALLOWED_ORIGINS`, and `APP_BASE_URL` so a deployment cannot silently start with localhost or development values.
 
-Set these optional variables if the application needs email or medical-history uploads:
+Set these variables to enable SendGrid email delivery and medical-history uploads:
 
 ```text
-MAIL_USERNAME=<smtp username>
-MAIL_PASSWORD=<smtp password or app password>
-MAIL_FROM=<sender address>
+SENDGRID_ENABLED=true
+SENDGRID_API_KEY=<sendgrid api key>
+MAIL_FROM=<verified sendgrid sender address>
 CLOUDINARY_CLOUD_NAME=<cloud name>
 CLOUDINARY_API_KEY=<api key>
 CLOUDINARY_API_SECRET=<api secret>
 ```
+
+The sender address must be verified in SendGrid under **Sender Authentication**. SendGrid accepts the API request with HTTP `202`; delivery failures are recorded in the notifications table and can be retried through the admin notification retry endpoint.
 
 After the first deploy, open the generated Railway domain and verify `/api/health` returns `{"status":"UP"}`. Flyway runs the database migrations automatically at startup. Keep `AI_ENABLED=false` unless the Flask AI service is also deployed and `AI_SERVICE_URL` points to its public Railway URL; the backend's deterministic fallback remains available.
