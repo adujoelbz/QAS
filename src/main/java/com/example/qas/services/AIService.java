@@ -4,7 +4,10 @@ import com.example.qas.dto.ai.*;
 import com.example.qas.models.Appointment;
 import com.example.qas.models.Department;
 import com.example.qas.repositories.AppointmentRepository;
+import com.example.qas.models.enums.AppointmentStatus;
 import com.example.qas.repositories.DepartmentRepository;
+import com.example.qas.repositories.NotificationRepository;
+import com.example.qas.models.enums.NotificationStatus;
 import com.example.qas.services.ai.AIServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +27,7 @@ public class AIService {
     private final AIServiceClient aiClient;
     private final DepartmentRepository departmentRepository;
     private final AppointmentRepository appointmentRepository;
+    private final NotificationRepository notificationRepository;
 
     @Value("${ai.service.enabled:true}")
     private boolean aiEnabled;
@@ -63,8 +67,13 @@ public class AIService {
                     .doctorId(appointment.getDoctor() != null ? appointment.getDoctor().getId() : null)
                     .appointmentDate(appointment.getRequestedDate())
                     .appointmentTime(appointment.getRequestedTime())
-                    .previousNoShows(0) // we need to count previous no-shows for patient
-                    .reminderSent(false) // placeholder
+                    .previousNoShows((int) appointmentRepository.countByPatientIdAndStatus(
+                            appointment.getPatient().getId(), AppointmentStatus.NO_SHOW))
+                    .reminderSent(notificationRepository.existsByAppointmentIdAndSubjectAndStatus(
+                            appointment.getId(), "Appointment Reminder", NotificationStatus.SENT))
+                    .queuePosition(appointment.getQueuePosition())
+                    .emergencyFlag(Boolean.TRUE.equals(appointment.getEmergencyFlag()))
+                    .dayOfWeek(appointment.getRequestedDate().getDayOfWeek().name())
                     .build();
 
             NoShowPredictionResponse response = aiClient.predictNoShow(request);

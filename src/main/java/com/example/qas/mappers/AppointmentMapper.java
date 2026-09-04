@@ -27,6 +27,8 @@ public interface AppointmentMapper {
     @Mapping(target = "patientId", source = "patient.id")
     @Mapping(target = "departmentId", source = "department.id")
     @Mapping(target = "doctorId", source = "doctor.id")
+    @Mapping(target = "doctorName", expression = "java(source.getDoctor() == null ? null : source.getDoctor().getFirstName() + \" \" + source.getDoctor().getLastName())")
+    @Mapping(target = "medicalHistory", source = "patient.medicalHistory")
     AppointmentResponse toResponse(Appointment source);
 
     @Mapping(target = "patientId", source = "patient.id")

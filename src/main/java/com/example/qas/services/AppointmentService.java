@@ -22,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -127,6 +128,7 @@ public class AppointmentService {
         return generateFallbackSlots(departmentId, preferredDate);
     }
 
+    @Transactional(readOnly = true)
     public AppointmentResponse getAppointmentById(Long appointmentId) {
         Patient currentPatient = getCurrentPatient();
         Appointment appointment = appointmentRepository.findById(appointmentId)
@@ -137,9 +139,10 @@ public class AppointmentService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not own this appointment");
         }
 
-        return appointmentMapper.toResponse(appointment);
+        return toPatientResponse(appointment);
     }
 
+    @Transactional(readOnly = true)
     public Page<AppointmentResponse> getMyAppointments(String status, Pageable pageable) {
         Patient patient = getCurrentPatient();
 
@@ -147,14 +150,14 @@ public class AppointmentService {
             try {
                 AppointmentStatus appointmentStatus = AppointmentStatus.valueOf(status.toUpperCase());
                 return appointmentRepository.findByPatientIdAndStatus(patient.getId(), appointmentStatus, pageable)
-                        .map(appointmentMapper::toResponse);
+                        .map(this::toPatientResponse);
             } catch (IllegalArgumentException e) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status value");
             }
         }
 
         return appointmentRepository.findByPatientId(patient.getId(), pageable)
-                .map(appointmentMapper::toResponse);
+                .map(this::toPatientResponse);
     }
 
     @Transactional
@@ -294,6 +297,7 @@ public class AppointmentService {
 
     // === Admin operations ===
 
+    @Transactional(readOnly = true)
     public Page<AppointmentResponse> getAllAppointments(String status, Long departmentId, Long doctorId,
                                                         LocalDate dateFrom, LocalDate dateTo, Pageable pageable) {
         AppointmentStatus appointmentStatus = null;
@@ -305,13 +309,35 @@ public class AppointmentService {
             }
         }
 
-        return appointmentRepository.findAppointmentsWithFilters(
-                        appointmentStatus, departmentId, doctorId, dateFrom, dateTo, pageable)
-                .map(appointmentMapper::toResponse);
+        Specification<Appointment> specification = (root, query, cb) -> cb.conjunction();
+        if (appointmentStatus != null) {
+            AppointmentStatus statusFilter = appointmentStatus;
+            specification = specification.and((root, query, cb) ->
+                    cb.equal(root.get("status"), statusFilter));
+        }
+        if (departmentId != null) {
+            specification = specification.and((root, query, cb) ->
+                    cb.equal(root.get("department").get("id"), departmentId));
+        }
+        if (doctorId != null) {
+            specification = specification.and((root, query, cb) ->
+                    cb.equal(root.get("doctor").get("id"), doctorId));
+        }
+        if (dateFrom != null) {
+            specification = specification.and((root, query, cb) ->
+                    cb.greaterThanOrEqualTo(root.get("requestedDate"), dateFrom));
+        }
+        if (dateTo != null) {
+            specification = specification.and((root, query, cb) ->
+                    cb.lessThanOrEqualTo(root.get("requestedDate"), dateTo));
+        }
+
+        return appointmentRepository.findAll(specification, pageable)
+                .map(this::toPatientResponse);
     }
 
     @Transactional
-    public AppointmentResponse approveAppointment(Long appointmentId, Long doctorId) {
+    public AppointmentResponse approveAppointment(Long appointmentId) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
 
@@ -320,26 +346,12 @@ public class AppointmentService {
                     "Only pending appointments can be approved");
         }
 
-        // Verify doctor exists and belongs to the same department/hospital
-        Doctor doctor = doctorRepository.findById(doctorId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Doctor not found"));
-
-        // Check if doctor belongs to the same hospital as the department
-        if (!doctor.getHospital().getId().equals(appointment.getDepartment().getHospital().getId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Doctor must belong to the same hospital as the department");
-        }
-
-        // Check if doctor is available at that time
-        List<Appointment> conflicts = appointmentRepository.findConflictingAppointments(
-                doctorId,
-                appointment.getRequestedDate(),
-                appointment.getRequestedTime(),
-                appointment.getRequestedTime().plusMinutes(30)
-        );
-        if (!conflicts.isEmpty()) {
+        // Assignment is automatic: choose an eligible doctor for the
+        // department's hospital/specialty and requested time slot.
+        Doctor doctor = queueService.findAvailableDoctor(appointment);
+        if (doctor == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Doctor is already booked at this time");
+                    "No available doctor matches this department and requested time");
         }
 
         appointment.setDoctor(doctor);
@@ -389,6 +401,7 @@ public class AppointmentService {
 
     // === Doctor operations ===
 
+    @Transactional(readOnly = true)
     public List<AppointmentResponse> getDoctorAppointments(Long doctorId, String status, LocalDate date) {
         Doctor doctor = getCurrentDoctor();
 
@@ -479,6 +492,15 @@ public class AppointmentService {
         User currentUser = SecurityUtils.getCurrentUser(userRepository);
         return doctorRepository.findByUserId(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Doctor profile not found"));
+    }
+
+    private AppointmentResponse toPatientResponse(Appointment appointment) {
+        AppointmentResponse response = appointmentMapper.toResponse(appointment);
+        if (response.getEstimatedWaitTimeMinutes() == null && appointment.getQueuePosition() != null) {
+            int duration = appointment.getDepartment().getEstimatedConsultationDurationMinutes();
+            response.setEstimatedWaitTimeMinutes(Math.max(0, appointment.getQueuePosition() - 1) * duration);
+        }
+        return response;
     }
 
     private List<SlotRecommendation> generateFallbackSlots(Long departmentId, LocalDate date) {

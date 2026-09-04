@@ -64,6 +64,7 @@ public class QuestionService {
 
     // === Get a question by ID (patient or doctor can view) ===
 
+    @Transactional(readOnly = true)
     public QuestionResponse getQuestion(Long appointmentId, Long questionId) {
         // Check if the appointment exists
         Appointment appointment = appointmentRepository.findById(appointmentId)
@@ -85,6 +86,7 @@ public class QuestionService {
 
     // === Get all questions for an appointment (patient or doctor) ===
 
+    @Transactional(readOnly = true)
     public List<QuestionResponse> getQuestionsForAppointment(Long appointmentId) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));

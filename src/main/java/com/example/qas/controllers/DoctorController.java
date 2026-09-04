@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/doctors")
@@ -60,6 +61,18 @@ public class DoctorController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) LocalDate date) {
         return ResponseEntity.ok(doctorService.getDoctorAppointments(status, date));
+    }
+
+    @GetMapping("/appointments/{appointmentId}/medical-history/download")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<Map<String, String>> downloadPatientMedicalHistory(
+            @PathVariable Long appointmentId,
+            @RequestParam String publicId) {
+        DoctorService.MedicalHistoryFileResource file =
+                doctorService.getMedicalHistoryFileResource(appointmentId, publicId);
+        return ResponseEntity.ok(Map.of(
+                "downloadUrl", file.url(),
+                "originalFilename", file.originalFilename()));
     }
 
     @PatchMapping("/appointments/{appointmentId}/status")

@@ -1,7 +1,17 @@
 {
-  "rows":15.0,
-  "noShowRows":15.0,
-  "noShowAccuracy":0.9333,
-  "waitRows":10.0,
-  "waitMeanAbsoluteError":3.6
+  "artifactVersion": 2,
+  "rows": 18,
+  "noShowRows": 18,
+  "noShowPositiveCount": 6,
+  "noShowNegativeCount": 12,
+  "noShowPositiveRate": 0.3333,
+  "noShowCvAccuracy": 0.9444,
+  "noShowCvBalancedAccuracy": 0.9583,
+  "noShowCvAuc": 0.9861,
+  "noShowCvFolds": 5,
+  "waitRows": 10,
+  "waitCvMae": 4.4538,
+  "waitCvFolds": 5,
+  "lowConfidence": true,
+  "confidenceWarning": "Collect more historical appointments before relying on model metrics"
 }

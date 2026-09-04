@@ -1,5 +1,7 @@
 package com.example.qas.services;
 
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 import com.example.qas.dto.request.ConsultationDurationRequest;
 import com.example.qas.dto.request.DoctorAvailabilityRequest;
 import com.example.qas.dto.response.AppointmentResponse;
@@ -29,6 +31,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -45,9 +48,13 @@ public class DoctorService {
     private final QueueService queueService;            // Added
     private final NotificationService notificationService; // Added
     private final AppointmentTransitionPolicy appointmentTransitionPolicy;
+    private final Cloudinary cloudinary;
+
+    public record MedicalHistoryFileResource(String url, String originalFilename) {}
 
     // === Doctor's own profile ===
 
+    @Transactional(readOnly = true)
     public DoctorProfileResponse getCurrentDoctorProfile() {
         Doctor doctor = getCurrentDoctor();
         return mapToDoctorProfileResponse(doctor);
@@ -98,6 +105,7 @@ public class DoctorService {
         return schedule;
     }
 
+    @Transactional(readOnly = true)
     public List<AppointmentResponse> getDoctorAppointments(String status, LocalDate date) {
         Doctor doctor = getCurrentDoctor();
         AppointmentStatus appointmentStatus = null;
@@ -126,6 +134,42 @@ public class DoctorService {
         return appointments.stream()
                 .map(appointmentMapper::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public MedicalHistoryFileResource getMedicalHistoryFileResource(Long appointmentId, String publicId) {
+        Doctor doctor = getCurrentDoctor();
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Appointment not found"));
+        if (appointment.getDoctor() == null || !appointment.getDoctor().getId().equals(doctor.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this appointment");
+        }
+
+        Map<String, Object> medicalHistory = appointment.getPatient().getMedicalHistory();
+        Object filesObject = medicalHistory == null ? null : medicalHistory.get("files");
+        if (!(filesObject instanceof List<?> files)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No medical history files found");
+        }
+        Map<?, ?> fileMetadata = files.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .filter(file -> publicId.equals(file.get("publicId")))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found for this patient"));
+
+        try {
+            String format = Objects.toString(fileMetadata.get("format"), "");
+            String resourceType = Objects.toString(fileMetadata.get("resourceType"), "raw");
+            String signedUrl = cloudinary.privateDownload(publicId, format, ObjectUtils.asMap(
+                    "resource_type", resourceType,
+                    "expires_at", System.currentTimeMillis() / 1000 + 300,
+                    "attachment", true
+            ));
+            return new MedicalHistoryFileResource(signedUrl,
+                    Objects.toString(fileMetadata.get("originalFileName"), "medical-history-file"));
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate download URL");
+        }
     }
 
     @Transactional

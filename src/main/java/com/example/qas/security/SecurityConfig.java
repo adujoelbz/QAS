@@ -51,6 +51,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/error", "/api/health", "/api/ready", "/api/auth/**", "/api/public/**").permitAll()
                         .requestMatchers("/api/patients/**").hasAuthority("ROLE_PATIENT")
+                        // Question conversations are available to the patient and the
+                        // assigned doctor; method security and QuestionService enforce
+                        // the specific action and appointment ownership.
+                        .requestMatchers("/api/appointments/*/questions", "/api/appointments/*/questions/**")
+                        .hasAnyRole("PATIENT", "DOCTOR")
                         .requestMatchers("/api/appointments/**").hasAuthority("ROLE_PATIENT")
                         .requestMatchers("/api/doctors/**").hasRole("DOCTOR")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")

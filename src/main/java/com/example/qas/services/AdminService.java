@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.DayOfWeek;
+import java.time.temporal.TemporalAdjusters;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +39,9 @@ public class AdminService {
     public DashboardStatsResponse getDashboardStats() {
         LocalDate today = LocalDate.now();
         LocalDate startOfWeek = today.minusDays(today.getDayOfWeek().getValue() - 1); // Monday
+        LocalDate endOfWeek = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
         LocalDate startOfMonth = today.withDayOfMonth(1);
+        LocalDate endOfMonth = today.with(TemporalAdjusters.lastDayOfMonth());
 
         // Count users by role
         long totalPatients = userRepository.countByRole(UserRole.PATIENT);
@@ -45,30 +49,17 @@ public class AdminService {
         long totalAdmins = userRepository.countByRole(UserRole.ADMIN);
 
         // Appointment counts
-        long appointmentsToday = appointmentRepository.countByStatusAndRequestedDate(AppointmentStatus.COMPLETED, today)
-                + appointmentRepository.countByStatusAndRequestedDate(AppointmentStatus.CONFIRMED, today)
-                + appointmentRepository.countByStatusAndRequestedDate(AppointmentStatus.APPROVED, today)
-                + appointmentRepository.countByStatusAndRequestedDate(AppointmentStatus.NO_SHOW, today);
-
-        long appointmentsThisWeek = appointmentRepository.countByStatusAndRequestedDateBetween(
-                AppointmentStatus.COMPLETED, startOfWeek, today)
-                + appointmentRepository.countByStatusAndRequestedDateBetween(
-                AppointmentStatus.CONFIRMED, startOfWeek, today)
-                + appointmentRepository.countByStatusAndRequestedDateBetween(
-                AppointmentStatus.APPROVED, startOfWeek, today);
-
-        long appointmentsThisMonth = appointmentRepository.countByStatusAndRequestedDateBetween(
-                AppointmentStatus.COMPLETED, startOfMonth, today)
-                + appointmentRepository.countByStatusAndRequestedDateBetween(
-                AppointmentStatus.CONFIRMED, startOfMonth, today);
+        long appointmentsToday = appointmentRepository.countByRequestedDate(today);
+        long appointmentsThisWeek = appointmentRepository.countByRequestedDateBetween(startOfWeek, endOfWeek);
+        long appointmentsThisMonth = appointmentRepository.countByRequestedDateBetween(startOfMonth, endOfMonth);
 
         // Average wait time (for completed appointments this month)
-        Double avgWaitTime = appointmentRepository.findAverageActualWaitTime(startOfMonth, today);
+        Double avgWaitTime = appointmentRepository.findAverageActualWaitTime(startOfMonth, endOfMonth);
 
         // No-show rate (this month)
         long totalCompleted = appointmentRepository.countByStatusAndRequestedDateBetween(
-                AppointmentStatus.COMPLETED, startOfMonth, today);
-        long totalNoShows = appointmentRepository.countNoShowsBetween(startOfMonth, today);
+                AppointmentStatus.COMPLETED, startOfMonth, endOfMonth);
+        long totalNoShows = appointmentRepository.countNoShowsBetween(startOfMonth, endOfMonth);
         double noShowRate = (totalCompleted + totalNoShows) > 0
                 ? (double) totalNoShows / (totalCompleted + totalNoShows)
                 : 0.0;

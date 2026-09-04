@@ -5,6 +5,7 @@ import com.example.qas.models.enums.AppointmentStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,7 +16,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
+public interface AppointmentRepository extends JpaRepository<Appointment, Long>, JpaSpecificationExecutor<Appointment> {
     // === By user role ===
     List<Appointment> findByPatientId(Long patientId);
     Page<Appointment> findByPatientId(Long patientId, Pageable pageable);
@@ -25,6 +26,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     // === By status ===
     List<Appointment> findByStatus(AppointmentStatus status);
     List<Appointment> findByPatientIdAndStatus(Long patientId, AppointmentStatus status);
+    long countByPatientIdAndStatus(Long patientId, AppointmentStatus status);
     // NEW: with Pageable support
     Page<Appointment> findByPatientIdAndStatus(Long patientId, AppointmentStatus status, Pageable pageable);
     List<Appointment> findByDoctorIdAndStatus(Long doctorId, AppointmentStatus status);
@@ -38,6 +40,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
     // === For admin dashboard ===
     long countByStatus(AppointmentStatus status);
+    long countByRequestedDate(LocalDate date);
+    long countByRequestedDateBetween(LocalDate start, LocalDate end);
     long countByStatusAndRequestedDate(AppointmentStatus status, LocalDate date);
     long countByDepartmentIdAndStatus(Long departmentId, AppointmentStatus status);
 
@@ -77,19 +81,6 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             "ORDER BY a.emergencyFlag DESC, a.createdAt ASC")
     List<Appointment> findStandbyCandidates(@Param("departmentId") Long departmentId);
 
-    // === Admin filtering ===
-    @Query("SELECT a FROM Appointment a WHERE " +
-            "a.status = COALESCE(:status, a.status) AND " +
-            "a.department.id = COALESCE(:departmentId, a.department.id) AND " +
-            "a.doctor.id = COALESCE(:doctorId, a.doctor.id) AND " +
-            "a.requestedDate >= COALESCE(:dateFrom, a.requestedDate) AND " +
-            "a.requestedDate <= COALESCE(:dateTo, a.requestedDate)")
-    Page<Appointment> findAppointmentsWithFilters(@Param("status") AppointmentStatus status,
-                                                  @Param("departmentId") Long departmentId,
-                                                  @Param("doctorId") Long doctorId,
-                                                  @Param("dateFrom") LocalDate dateFrom,
-                                                  @Param("dateTo") LocalDate dateTo,
-                                                  Pageable pageable);
     // === Existing methods ===
     Optional<Appointment> findByIdAndPatientId(Long id, Long patientId);
 

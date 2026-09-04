@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalTime;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -84,6 +85,8 @@ public class QueueService {
         int pos = 1;
         for (Appointment app : activeQueue) {
             app.setQueuePosition(pos);
+            int avgDuration = app.getDepartment().getEstimatedConsultationDurationMinutes();
+            app.setEstimatedWaitTimeMinutes(Math.max(0, pos - 1) * avgDuration);
             pos++;
         }
         appointmentRepository.saveAll(activeQueue);
@@ -120,22 +123,42 @@ public class QueueService {
         }
     }
 
-    private Doctor findAvailableDoctor(Appointment appointment) {
+    /**
+     * Finds a doctor who can handle the appointment's department, hospital,
+     * requested day/time, and duration without an existing queue conflict.
+     */
+    public Doctor findAvailableDoctor(Appointment appointment) {
         Department department = appointment.getDepartment();
         List<Doctor> doctors = doctorRepository.findBySpecialtyAndHospitalId(
                 department.getSpecialty(), department.getHospital().getId());
         String day = appointment.getRequestedDate().getDayOfWeek().name();
         int duration = department.getEstimatedConsultationDurationMinutes();
+        LocalTime end = appointment.getRequestedTime().plusMinutes(duration);
+
+        // Prefer doctors whose configured schedule covers the requested slot.
         for (Doctor doctor : doctors) {
             boolean scheduled = doctorAvailabilityRepository.findByDoctorIdAndDayOfWeek(doctor.getId(), day)
                     .stream().anyMatch(a -> !appointment.getRequestedTime().isBefore(a.getStartTime())
-                            && !appointment.getRequestedTime().plusMinutes(duration).isAfter(a.getEndTime()));
+                            && !end.isAfter(a.getEndTime()));
             if (!scheduled) continue;
-            LocalTime end = appointment.getRequestedTime().plusMinutes(duration);
             if (appointmentRepository.findConflictingAppointments(doctor.getId(), appointment.getRequestedDate(),
                     appointment.getRequestedTime(), end).isEmpty()) return doctor;
         }
-        return null;
+
+        // A schedule is optional in the current data model. If no scheduled
+        // doctor was found, still assign a conflict-free doctor from the same
+        // specialty and hospital, choosing the lightest current workload.
+        return doctors.stream()
+                .filter(doctor -> appointmentRepository.findConflictingAppointments(
+                        doctor.getId(), appointment.getRequestedDate(),
+                        appointment.getRequestedTime(), end).isEmpty())
+                .min(Comparator.comparingLong(doctor -> appointmentRepository
+                        .findByDoctorIdAndRequestedDate(doctor.getId(), appointment.getRequestedDate())
+                        .stream()
+                        .filter(existing -> existing.getStatus() == AppointmentStatus.APPROVED
+                                || existing.getStatus() == AppointmentStatus.CONFIRMED)
+                        .count()))
+                .orElse(null);
     }
 
     // === Queue analytics ===

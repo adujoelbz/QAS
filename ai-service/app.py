@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
+import math
 import os
 from pathlib import Path
 
 import joblib
+import pandas as pd
 
 app = Flask(__name__)
 CORS(app)
@@ -34,6 +36,53 @@ def bounded_number(value, default, minimum, maximum):
     except (TypeError, ValueError):
         return default
 
+
+def boolean_value(value, default=False):
+    """Parse JSON booleans and common CSV/form string representations."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "n", "off", ""}:
+        return False
+    return default
+
+
+def model_features(data, feature_names):
+    """Build the same feature order used by train_models.py.
+
+    Keeping this explicit also lets older model artifacts continue to serve
+    requests while a newly trained v2 artifact is deployed.
+    """
+    try:
+        hour = max(0, min(23, int(str(data.get('appointmentTime', '12:00'))[:2])))
+    except (TypeError, ValueError):
+        hour = 12
+    weekdays = {name: index for index, name in enumerate(("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"))}
+    weekday = weekdays.get(str(data.get('dayOfWeek', 'MONDAY')).upper(), 0)
+    values = {
+        'patient_id': bounded_number(data.get('patientId'), -1, -1, 100000000),
+        'doctor_id': bounded_number(data.get('doctorId'), -1, -1, 100000000),
+        'appointment_hour': hour,
+        'hour_sin': math.sin(2 * math.pi * hour / 24),
+        'hour_cos': math.cos(2 * math.pi * hour / 24),
+        'weekday_sin': math.sin(2 * math.pi * weekday / 7),
+        'weekday_cos': math.cos(2 * math.pi * weekday / 7),
+        'queue_position': bounded_number(data.get('queuePosition'), 0, 0, 1000),
+        'emergency': 1 if boolean_value(data.get('emergencyFlag'), False) else 0,
+        'reminder_sent': 1 if boolean_value(data.get('reminderSent'), False) else 0,
+        'previous_no_shows': bounded_number(data.get('previousNoShows'), 0, 0, 20),
+        'patients_ahead': bounded_number(data.get('patientsAhead'), 0, 0, 1000),
+        'average_consultation_duration': bounded_number(data.get('averageConsultationDuration'), 30, 5, 240),
+        'current_queue_length': bounded_number(data.get('currentQueueLength'), 0, 0, 1000),
+    }
+    return pd.DataFrame([[values.get(name, 0) for name in feature_names]], columns=feature_names)
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({
@@ -41,7 +90,9 @@ def health():
         "service": "AI Service",
         "models": {
             "noShow": NO_SHOW_MODEL is not None,
+            "noShowVersion": NO_SHOW_MODEL.get('version', 1) if NO_SHOW_MODEL else None,
             "waitTime": WAIT_MODEL is not None,
+            "waitTimeVersion": WAIT_MODEL.get('version', 1) if WAIT_MODEL else None,
         },
     })
 
@@ -81,7 +132,7 @@ def predict_no_show():
         data = payload()
         hour = int(str(data.get('appointmentTime', '12:00'))[:2])
         previous = int(bounded_number(data.get('previousNoShows'), 0, 0, 20))
-        reminder_sent = bool(data.get('reminderSent', False))
+        reminder_sent = boolean_value(data.get('reminderSent'), False)
         probability = 0.03 + min(previous * 0.04, 0.24)
         if hour < 9: probability -= 0.01
         if hour >= 16: probability += 0.06
@@ -91,16 +142,13 @@ def predict_no_show():
         return jsonify({"error": str(error)}), 400
 
     if NO_SHOW_MODEL:
-        features = [[
-            bounded_number(data.get("patientId"), -1, -1, 100000000),
-            bounded_number(data.get("doctorId"), -1, -1, 100000000),
-            hour,
-            bounded_number(data.get("queuePosition"), 0, 0, 1000),
-            1 if data.get("emergencyFlag", False) else 0,
-            1 if reminder_sent else 0,
-        ]]
-        probability = float(NO_SHOW_MODEL["model"].predict_proba(features)[0][1])
-        probability = max(0.01, min(0.99, probability))
+        try:
+            names = NO_SHOW_MODEL.get("features", ["patient_id", "doctor_id", "appointment_hour", "queue_position", "emergency", "reminder_sent"])
+            features = model_features(data, names)
+            probability = float(NO_SHOW_MODEL["model"].predict_proba(features)[0][1])
+            probability = max(0.01, min(0.99, probability))
+        except (KeyError, TypeError, ValueError, IndexError) as error:
+            app.logger.warning("No-show model inference failed; using heuristic: %s", error)
 
     risk_level = "HIGH" if probability > 0.15 else "MEDIUM" if probability > 0.07 else "LOW"
     recommendation = "Send reminder and confirmation request" if risk_level == "HIGH" else "Send standard reminder" if risk_level == "MEDIUM" else "Normal"
@@ -128,9 +176,13 @@ def predict_wait_time():
         return jsonify({"error": str(error)}), 400
 
     if WAIT_MODEL:
-        features = [[max(1, patients_ahead + 1), patients_ahead, avg_duration, queue_length]]
-        wait = max(0, int(round(float(WAIT_MODEL["model"].predict(features)[0]))))
-        confidence = max(50, min(95, confidence + 5))
+        try:
+            names = WAIT_MODEL.get("features", ["queue_position", "patients_ahead", "average_consultation_duration", "current_queue_length"])
+            features = model_features({**data, "appointmentTime": data.get("time", "12:00"), "queuePosition": max(1, patients_ahead + 1), "patientsAhead": patients_ahead, "averageConsultationDuration": avg_duration, "currentQueueLength": queue_length}, names)
+            wait = max(0, int(round(float(WAIT_MODEL["model"].predict(features)[0]))))
+            confidence = max(50, min(95, confidence + 5))
+        except (KeyError, TypeError, ValueError, IndexError) as error:
+            app.logger.warning("Wait-time model inference failed; using heuristic: %s", error)
 
     return jsonify({
         "predictedWaitMinutes": int(wait),

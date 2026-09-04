@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.util.Map;
 
 @Data
 @Builder
@@ -20,6 +21,8 @@ public class AppointmentResponse {
     private Long patientId;
     private Long departmentId;
     private Long doctorId;
+    private String doctorName;
+    private Map<String, Object> medicalHistory;
     private LocalDate requestedDate;
     private LocalTime requestedTime;
     private AppointmentStatus status;
@@ -33,4 +36,6 @@ public class AppointmentResponse {
     private OffsetDateTime confirmedAt;
     private OffsetDateTime cancelledAt;
     private OffsetDateTime completedAt;
+    private OffsetDateTime consultationStartedAt;
+    private OffsetDateTime consultationEndedAt;
 }

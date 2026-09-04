@@ -121,9 +121,8 @@ public class AppointmentController {
     @PatchMapping("/admin/appointments/{appointmentId}/approve")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<AppointmentResponse> approveAppointment(
-            @PathVariable Long appointmentId,
-            @RequestParam Long doctorId) {
-        AppointmentResponse response = appointmentService.approveAppointment(appointmentId, doctorId);
+            @PathVariable Long appointmentId) {
+        AppointmentResponse response = appointmentService.approveAppointment(appointmentId);
         return ResponseEntity.ok(response);
     }
 

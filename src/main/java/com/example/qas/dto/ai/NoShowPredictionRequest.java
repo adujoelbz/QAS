@@ -19,4 +19,7 @@ public class NoShowPredictionRequest {
     private LocalTime appointmentTime;
     private Integer previousNoShows;
     private Boolean reminderSent;
+    private Integer queuePosition;
+    private Boolean emergencyFlag;
+    private String dayOfWeek;
 }
