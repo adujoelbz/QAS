@@ -6,9 +6,9 @@ spring:
     # Prefer a complete Railway URL. SPRING_DATASOURCE_URL should be set to
     # jdbc:${{Postgres.DATABASE_URL}} in Railway; the component variables are
     # retained as a fallback for other hosts.
-    url: ${SPRING_DATASOURCE_URL:${JDBC_DATABASE_URL:jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}}}
-    username: ${SPRING_DATASOURCE_USERNAME:${PGUSER}}
-    password: ${SPRING_DATASOURCE_PASSWORD:${PGPASSWORD}}
+    url: jdbc:postgresql://postgres:FMfnmTdPDAGHphcMvDwuFsuKwrecAsBQ@postgres.railway.internal:5432/railway
+    username: postgres
+    password: FMfnmTdPDAGHphcMvDwuFsuKwrecAsBQ
 jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000}
